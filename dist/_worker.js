@@ -106,10 +106,101 @@ async function currentSubscription(env,userId){
   return {...s, effective_status:active?'active':'expired'};
 }
 
+
+async function ensureCandidateSchema(env){
+  const info=await env.JOB_DB.prepare("PRAGMA table_info(candidate_profiles)").all();
+  const have=new Set((info.results||[]).map(x=>x.name));
+  const cols={gender:'TEXT',birth_date:'TEXT',nationality:'TEXT',marital_status:'TEXT',whatsapp:'TEXT',country:'TEXT',professional_title:'TEXT',activity_domain:'TEXT',other_skills:'TEXT',experience_level:'TEXT',current_situation:'TEXT',driving_license:'INTEGER DEFAULT 0',driving_category:'TEXT',education_level:'TEXT',target_position:'TEXT',target_domain:'TEXT',desired_contracts:'TEXT',desired_city:'TEXT',mobility:'TEXT',desired_salary:'INTEGER',accepts_travel:'INTEGER DEFAULT 0',job_alerts:'INTEGER DEFAULT 0'};
+  for(const [name,type] of Object.entries(cols)) if(!have.has(name)) await env.JOB_DB.prepare(`ALTER TABLE candidate_profiles ADD COLUMN ${name} ${type}`).run();
+  await env.JOB_DB.exec(`
+    CREATE TABLE IF NOT EXISTS candidate_education (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,diploma TEXT,specialty TEXT,institution TEXT,graduation_year TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE INDEX IF NOT EXISTS idx_candidate_education_user ON candidate_education(user_id);
+    CREATE TABLE IF NOT EXISTS candidate_experiences (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,position TEXT,company TEXT,city_country TEXT,start_date TEXT,end_date TEXT,current_job INTEGER NOT NULL DEFAULT 0,responsibilities TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE INDEX IF NOT EXISTS idx_candidate_experiences_user ON candidate_experiences(user_id);
+    CREATE TABLE IF NOT EXISTS candidate_languages (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,language TEXT NOT NULL,level TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE INDEX IF NOT EXISTS idx_candidate_languages_user ON candidate_languages(user_id);
+    CREATE TABLE IF NOT EXISTS candidate_documents (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,document_type TEXT NOT NULL,file_name TEXT NOT NULL,mime_type TEXT NOT NULL,size_bytes INTEGER NOT NULL,content BLOB NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE INDEX IF NOT EXISTS idx_candidate_documents_user ON candidate_documents(user_id,document_type);
+  `);
+
+}
+async function ensureRecruiterSchema(env){
+  const info=await env.JOB_DB.prepare("PRAGMA table_info(recruiter_profiles)").all();
+  const have=new Set((info.results||[]).map(x=>x.name));
+  const cols={
+    first_name:'TEXT',last_name:'TEXT',job_title:'TEXT',whatsapp:'TEXT',country:'TEXT',photo:'TEXT',
+    trade_name:'TEXT',organization_type:'TEXT',sector:'TEXT',main_domain:'TEXT',foundation_year:'TEXT',
+    employee_count:'TEXT',company_country:'TEXT',company_city:'TEXT',district:'TEXT',website:'TEXT',social_page:'TEXT',
+    rccm:'TEXT',tax_id:'TEXT',cnps:'TEXT',desired_trades:'TEXT',recruitment_domains:'TEXT',
+    annual_recruitment_count:'TEXT',contract_types:'TEXT',recruitment_zones:'TEXT',
+    international_recruitment:'INTEGER DEFAULT 0',marketing_alerts:'INTEGER DEFAULT 0',
+    verification_status:"TEXT DEFAULT 'unverified'",verification_note:'TEXT',
+    email_verified:'INTEGER DEFAULT 0',phone_verified:'INTEGER DEFAULT 0',
+    company_info_verified:'INTEGER DEFAULT 0',official_document_verified:'INTEGER DEFAULT 0'
+  };
+  for(const [name,type] of Object.entries(cols)) if(!have.has(name)) await env.JOB_DB.prepare(`ALTER TABLE recruiter_profiles ADD COLUMN ${name} ${type}`).run();
+  await env.JOB_DB.exec(`
+    CREATE TABLE IF NOT EXISTS recruiter_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      document_type TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      content BLOB NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_recruiter_documents_user ON recruiter_documents(user_id,document_type);
+  `);
+}
+async function recruiterCompleteness(env,userId){
+  await ensureRecruiterSchema(env);
+  const p=await env.JOB_DB.prepare('SELECT * FROM recruiter_profiles WHERE user_id=?').bind(userId).first()||{};
+  const u=await env.JOB_DB.prepare('SELECT email,phone FROM users WHERE id=?').bind(userId).first()||{};
+  const docs=await env.JOB_DB.prepare('SELECT COUNT(*) n FROM recruiter_documents WHERE user_id=?').bind(userId).first();
+  const checks=[
+    p.first_name,p.last_name,p.job_title,u.phone,u.email,p.country,
+    p.company_name,p.organization_type,p.sector,p.main_domain,p.description,
+    p.company_country,p.company_city,p.address,p.desired_trades,p.recruitment_domains,
+    p.annual_recruitment_count,p.contract_types,p.recruitment_zones,Number(docs?.n)>0
+  ];
+  const percent=Math.round(checks.filter(Boolean).length/checks.length*100);
+  const recommendations=[];
+  if(!p.company_name) recommendations.push('Ajouter la raison sociale de l’entreprise');
+  if(!p.sector||!p.main_domain) recommendations.push('Compléter le secteur et le domaine d’activité');
+  if(!p.desired_trades) recommendations.push('Indiquer les métiers généralement recherchés');
+  if(!Number(docs?.n)) recommendations.push('Ajouter un document justificatif');
+  if(p.verification_status!=='verified') recommendations.push('Soumettre le compte à la vérification');
+  return {percent,recommendations,verification_status:p.verification_status||'unverified'};
+}
+function parseList(v){ if(Array.isArray(v)) return v; try{ const x=JSON.parse(String(v||'[]')); return Array.isArray(x)?x:[]; }catch{return [];} }
+async function candidateCompleteness(env,userId){
+  await ensureCandidateSchema(env);
+  const p=await env.JOB_DB.prepare('SELECT * FROM candidate_profiles WHERE user_id=?').bind(userId).first()||{};
+  const u=await env.JOB_DB.prepare('SELECT email,phone FROM users WHERE id=?').bind(userId).first()||{};
+  const edu=await env.JOB_DB.prepare('SELECT COUNT(*) n FROM candidate_education WHERE user_id=?').bind(userId).first();
+  const exp=await env.JOB_DB.prepare('SELECT COUNT(*) n FROM candidate_experiences WHERE user_id=?').bind(userId).first();
+  const lang=await env.JOB_DB.prepare('SELECT COUNT(*) n FROM candidate_languages WHERE user_id=?').bind(userId).first();
+  const docs=await env.JOB_DB.prepare("SELECT document_type,COUNT(*) n FROM candidate_documents WHERE user_id=? GROUP BY document_type").bind(userId).all();
+  const docTypes=new Set((docs.results||[]).map(x=>x.document_type));
+  const checks=[p.first_name,p.last_name,p.gender,p.birth_date,p.nationality,u.phone,u.email,p.city,p.country,p.professional_title,p.activity_domain,p.profession,p.experience_level,p.current_situation,p.description,p.skills,p.education_level,p.target_position,p.target_domain,p.desired_contracts,p.mobility,p.availability,Number(edu?.n)>0,Number(exp?.n)>0,Number(lang?.n)>0,docTypes.has('cv')];
+  const complete=checks.filter(Boolean).length;
+  const percent=Math.round(complete/checks.length*100);
+  const recommendations=[];
+  if(!docTypes.has('cv')) recommendations.push('Ajouter votre CV');
+  if(!Number(exp?.n)) recommendations.push('Ajouter une expérience');
+  if(!p.skills) recommendations.push('Compléter vos compétences');
+  if(!Number(edu?.n)) recommendations.push('Ajouter un diplôme ou une formation');
+  if(!Number(lang?.n)) recommendations.push('Ajouter vos langues');
+  return {percent,recommendations};
+}
+
 async function handleRegister(req,env){
   const b=await req.json().catch(()=>({})); const role=b.role==='recruiter'?'recruiter':'candidate';
   const email=safeText(b.email,190).toLowerCase(), password=String(b.password||''), phone=safeText(b.phone,40);
   if(!validEmail(email)||password.length<8) return json({error:'E-mail invalide ou mot de passe trop court.'},400);
+  if(role==='candidate' && (!b.terms || !safeText(b.last_name,100) || !safeText(b.first_name,100) || !safeText(b.birth_date,20) || !safeText(b.nationality,100) || !phone || !safeText(b.city,120) || !safeText(b.country,100))) return json({error:'Veuillez compléter toutes les informations personnelles obligatoires et accepter les conditions.'},400);
+  if(role==='recruiter' && (!b.terms || !b.privacy || !safeText(b.last_name,100) || !safeText(b.first_name,100) || !safeText(b.job_title,150) || !phone || !safeText(b.country,100))) return json({error:'Veuillez compléter les informations obligatoires du recruteur et accepter les conditions et la politique de confidentialité.'},400);
   const exists=await env.JOB_DB.prepare('SELECT id FROM users WHERE email=?').bind(email).first(); if(exists) return json({error:'Ce compte existe déjà.'},409);
   let userId=null;
   try{
@@ -117,8 +208,8 @@ async function handleRegister(req,env){
     const ins=await env.JOB_DB.prepare('INSERT INTO users(email,phone,password_hash,password_salt,role) VALUES(?,?,?,?,?)').bind(email,phone,p.hash,p.salt,role).run();
     userId=Number(ins?.meta?.last_row_id);
     if(!userId) throw new Error('User insert did not return last_row_id');
-    if(role==='candidate') await env.JOB_DB.prepare('INSERT INTO candidate_profiles(user_id,first_name,last_name,profession,city) VALUES(?,?,?,?,?)').bind(userId,safeText(b.first_name,100),safeText(b.last_name,100),safeText(b.profession,150),safeText(b.city,120)).run();
-    else await env.JOB_DB.prepare('INSERT INTO recruiter_profiles(user_id,recruiter_type,company_name,activity,city) VALUES(?,?,?,?,?)').bind(userId,safeText(b.recruiter_type,80),safeText(b.company_name,180),safeText(b.activity,180),safeText(b.city,120)).run();
+    if(role==='candidate') { await ensureCandidateSchema(env); await env.JOB_DB.prepare('INSERT INTO candidate_profiles(user_id,first_name,last_name,gender,birth_date,nationality,marital_status,whatsapp,city,location,country,photo,job_alerts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(userId,safeText(b.first_name,100),safeText(b.last_name,100),safeText(b.gender,20),safeText(b.birth_date,20),safeText(b.nationality,100),safeText(b.marital_status,80),safeText(b.whatsapp,40),safeText(b.city,120),safeText(b.location,180),safeText(b.country,100),safeText(b.photo,900000),b.job_alerts?1:0).run(); }
+    else { await ensureRecruiterSchema(env); await env.JOB_DB.prepare('INSERT INTO recruiter_profiles(user_id,first_name,last_name,job_title,whatsapp,city,country,photo,marketing_alerts,verification_status) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(userId,safeText(b.first_name,100),safeText(b.last_name,100),safeText(b.job_title,150),safeText(b.whatsapp,40),safeText(b.city,120),safeText(b.country,100),safeText(b.photo,900000),b.marketing_alerts?1:0,'unverified').run(); }
     const expires=role==='candidate'?addDays(7):new Date(Date.now()+24*3600*1000).toISOString();
     await env.JOB_DB.prepare('INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status) VALUES(?,?,?,?,?)').bind(userId,'free',nowISO(),expires,'active').run();
     const r=await env.JOB_DB.prepare('SELECT id,email,phone,role,status,session_version FROM users WHERE id=?').bind(userId).first();
@@ -167,12 +258,12 @@ async function api(req,env,url){
     const ph=await createPassword(neu); await env.JOB_DB.prepare('UPDATE users SET password_hash=?,password_salt=?,session_version=session_version+1,updated_at=? WHERE id=?').bind(ph.hash,ph.salt,nowISO(),s.user.id).run(); await env.JOB_KV.delete(`sess:${s.token}`); await audit(env,s.user.id,'PASSWORD_CHANGED','user',s.user.id); return json({ok:true},200,{'set-cookie':clearCookie()});
   }
   if((p==='/api/profile'||p==='/api/load')&&m==='GET'){
-    const s=await requireSession(req,env); const table=s.user.role==='recruiter'?'recruiter_profiles':'candidate_profiles'; const row=await env.JOB_DB.prepare(`SELECT * FROM ${table} WHERE user_id=?`).bind(s.user.id).first(); return json({profile:row,subscription:await currentSubscription(env,s.user.id)});
+    const s=await requireSession(req,env); const table=s.user.role==='recruiter'?'recruiter_profiles':'candidate_profiles'; if(s.user.role==='candidate') await ensureCandidateSchema(env); if(s.user.role==='recruiter') await ensureRecruiterSchema(env); const row=await env.JOB_DB.prepare(`SELECT * FROM ${table} WHERE user_id=?`).bind(s.user.id).first(); if(s.user.role==='candidate'){ const education=await env.JOB_DB.prepare('SELECT * FROM candidate_education WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const experiences=await env.JOB_DB.prepare('SELECT * FROM candidate_experiences WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const languages=await env.JOB_DB.prepare('SELECT * FROM candidate_languages WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const documents=await env.JOB_DB.prepare('SELECT id,document_type,file_name,mime_type,size_bytes,created_at FROM candidate_documents WHERE user_id=? ORDER BY id DESC').bind(s.user.id).all(); return json({profile:row,education:education.results||[],experiences:experiences.results||[],languages:languages.results||[],documents:documents.results||[],completeness:await candidateCompleteness(env,s.user.id),subscription:await currentSubscription(env,s.user.id)}); } if(s.user.role==='recruiter'){ const documents=await env.JOB_DB.prepare('SELECT id,document_type,file_name,mime_type,size_bytes,created_at FROM recruiter_documents WHERE user_id=? ORDER BY id DESC').bind(s.user.id).all(); return json({profile:row,documents:documents.results||[],completeness:await recruiterCompleteness(env,s.user.id),subscription:await currentSubscription(env,s.user.id)}); } return json({profile:row,subscription:await currentSubscription(env,s.user.id)});
   }
   if((p==='/api/profile'||p==='/api/save')&&m==='POST'){
     const s=await requireSession(req,env), b=await req.json().catch(()=>({}));
-    if(s.user.role==='candidate') await env.JOB_DB.prepare(`UPDATE candidate_profiles SET first_name=?,last_name=?,profession=?,specialty=?,city=?,location=?,education=?,experience_years=?,skills=?,description=?,availability=?,work_types=?,updated_at=? WHERE user_id=?`).bind(safeText(b.first_name,100),safeText(b.last_name,100),safeText(b.profession,150),safeText(b.specialty,150),safeText(b.city,120),safeText(b.location,180),safeText(b.education,180),Number(b.experience_years||0),safeText(b.skills,1200),safeText(b.description,2500),safeText(b.availability,100),safeText(b.work_types,500),nowISO(),s.user.id).run();
-    else if(s.user.role==='recruiter') await env.JOB_DB.prepare(`UPDATE recruiter_profiles SET recruiter_type=?,company_name=?,activity=?,description=?,city=?,address=?,updated_at=? WHERE user_id=?`).bind(safeText(b.recruiter_type,80),safeText(b.company_name,180),safeText(b.activity,180),safeText(b.description,2500),safeText(b.city,120),safeText(b.address,250),nowISO(),s.user.id).run();
+    if(s.user.role==='candidate') { await ensureCandidateSchema(env); await env.JOB_DB.prepare(`UPDATE candidate_profiles SET first_name=?,last_name=?,gender=?,birth_date=?,nationality=?,marital_status=?,whatsapp=?,city=?,location=?,country=?,professional_title=?,activity_domain=?,profession=?,other_skills=?,experience_level=?,current_situation=?,description=?,skills=?,driving_license=?,driving_category=?,education_level=?,target_position=?,target_domain=?,desired_contracts=?,desired_city=?,mobility=?,availability=?,desired_salary=?,accepts_travel=?,job_alerts=?,updated_at=? WHERE user_id=?`).bind(safeText(b.first_name,100),safeText(b.last_name,100),safeText(b.gender,20),safeText(b.birth_date,20),safeText(b.nationality,100),safeText(b.marital_status,80),safeText(b.whatsapp,40),safeText(b.city,120),safeText(b.location,180),safeText(b.country,100),safeText(b.professional_title,180),safeText(b.activity_domain,180),safeText(b.profession,150),safeText(b.other_skills,1200),safeText(b.experience_level,80),safeText(b.current_situation,100),safeText(b.description,3000),safeText(b.skills,1800),b.driving_license?1:0,safeText(b.driving_category,50),safeText(b.education_level,80),safeText(b.target_position,180),safeText(b.target_domain,180),safeText(b.desired_contracts,500),safeText(b.desired_city,150),safeText(b.mobility,100),safeText(b.availability,100),b.desired_salary?Number(b.desired_salary):null,b.accepts_travel?1:0,b.job_alerts?1:0,nowISO(),s.user.id).run(); await env.JOB_DB.prepare('DELETE FROM candidate_education WHERE user_id=?').bind(s.user.id).run(); for(const x of parseList(b.education_items)) await env.JOB_DB.prepare('INSERT INTO candidate_education(user_id,diploma,specialty,institution,graduation_year) VALUES(?,?,?,?,?)').bind(s.user.id,safeText(x.diploma,150),safeText(x.specialty,180),safeText(x.institution,180),safeText(x.graduation_year,20)).run(); await env.JOB_DB.prepare('DELETE FROM candidate_experiences WHERE user_id=?').bind(s.user.id).run(); for(const x of parseList(b.experience_items)) await env.JOB_DB.prepare('INSERT INTO candidate_experiences(user_id,position,company,city_country,start_date,end_date,current_job,responsibilities) VALUES(?,?,?,?,?,?,?,?)').bind(s.user.id,safeText(x.position,180),safeText(x.company,180),safeText(x.city_country,180),safeText(x.start_date,20),safeText(x.end_date,20),x.current_job?1:0,safeText(x.responsibilities,2000)).run(); await env.JOB_DB.prepare('DELETE FROM candidate_languages WHERE user_id=?').bind(s.user.id).run(); for(const x of parseList(b.language_items)) if(x.language) await env.JOB_DB.prepare('INSERT INTO candidate_languages(user_id,language,level) VALUES(?,?,?)').bind(s.user.id,safeText(x.language,100),safeText(x.level,50)).run(); }
+    else if(s.user.role==='recruiter') { await ensureRecruiterSchema(env); await env.JOB_DB.prepare(`UPDATE recruiter_profiles SET first_name=?,last_name=?,job_title=?,whatsapp=?,city=?,country=?,trade_name=?,company_name=?,organization_type=?,sector=?,main_domain=?,description=?,foundation_year=?,employee_count=?,company_country=?,company_city=?,district=?,address=?,website=?,social_page=?,logo=?,rccm=?,tax_id=?,cnps=?,desired_trades=?,recruitment_domains=?,annual_recruitment_count=?,contract_types=?,recruitment_zones=?,international_recruitment=?,marketing_alerts=?,updated_at=? WHERE user_id=?`).bind(safeText(b.first_name,100),safeText(b.last_name,100),safeText(b.job_title,150),safeText(b.whatsapp,40),safeText(b.city,120),safeText(b.country,100),safeText(b.trade_name,180),safeText(b.company_name,180),safeText(b.organization_type,100),safeText(b.sector,180),safeText(b.main_domain,180),safeText(b.description,3000),safeText(b.foundation_year,20),safeText(b.employee_count,80),safeText(b.company_country,100),safeText(b.company_city,120),safeText(b.district,180),safeText(b.address,250),safeText(b.website,250),safeText(b.social_page,250),safeText(b.logo,900000),safeText(b.rccm,120),safeText(b.tax_id,120),safeText(b.cnps,120),safeText(b.desired_trades,1800),safeText(b.recruitment_domains,1200),safeText(b.annual_recruitment_count,80),safeText(b.contract_types,500),safeText(b.recruitment_zones,1000),b.international_recruitment?1:0,b.marketing_alerts?1:0,nowISO(),s.user.id).run(); }
     else return json({error:'Profil non applicable.'},400); return json({ok:true});
   }
   if(p==='/api/subscription-request'&&m==='POST'){
@@ -182,6 +273,33 @@ async function api(req,env,url){
     const payer=safeText(b.payer_phone,40), tx=safeText(b.transaction_id,120); if(!payer||!tx) return json({error:'Téléphone et ID transaction obligatoires.'},400);
     await env.JOB_DB.prepare('INSERT INTO subscription_requests(user_id,plan,amount,payer_phone,transaction_id) VALUES(?,?,?,?,?)').bind(s.user.id,plan,amount,payer,tx).run(); await audit(env,s.user.id,'SUBSCRIPTION_REQUEST','subscription',null,{plan,amount}); return json({ok:true});
   }
+  if(p==='/api/profile/completeness'&&m==='GET'){ const s=await requireSession(req,env); if(s.user.role!=='candidate') return json({percent:100,recommendations:[]}); return json(await candidateCompleteness(env,s.user.id)); }
+  if(p==='/api/profile/documents'&&m==='POST'){ const s=await requireSession(req,env); if(s.user.role!=='candidate') return json({error:'Réservé aux demandeurs d’emploi.'},403); await ensureCandidateSchema(env); const fd=await req.formData(); const file=fd.get('file'); const type=safeText(fd.get('document_type'),40); if(!file||typeof file.arrayBuffer!=='function') return json({error:'Fichier requis.'},400); const allowed=['cv','motivation','diploma','work_certificate','identity']; if(!allowed.includes(type)) return json({error:'Type de document invalide.'},400); if(file.size>700*1024) return json({error:'Fichier trop volumineux. Maximum 700 Ko par document.'},413); const allowedMime=['application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','image/jpeg','image/png']; if(!allowedMime.includes(file.type)) return json({error:'Format non autorisé.'},400); const buf=await file.arrayBuffer(); await env.JOB_DB.prepare('INSERT INTO candidate_documents(user_id,document_type,file_name,mime_type,size_bytes,content) VALUES(?,?,?,?,?,?)').bind(s.user.id,type,safeText(file.name,180),file.type,file.size,buf).run(); return json({ok:true,completeness:await candidateCompleteness(env,s.user.id)},201); }
+  if(p.startsWith('/api/profile/documents/')&&m==='DELETE'){ const s=await requireSession(req,env); const id=Number(p.split('/').pop()); await env.JOB_DB.prepare('DELETE FROM candidate_documents WHERE id=? AND user_id=?').bind(id,s.user.id).run(); return json({ok:true}); }
+
+  if(p==='/api/recruiter/documents'&&m==='POST'){
+    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403); await ensureRecruiterSchema(env);
+    const fd=await req.formData(); const file=fd.get('file'); const type=safeText(fd.get('document_type'),40)||'official';
+    if(!file||typeof file.arrayBuffer!=='function') return json({error:'Fichier requis.'},400);
+    if(file.size>900*1024) return json({error:'Fichier trop volumineux. Maximum 900 Ko.'},413);
+    const allowedMime=['application/pdf','image/jpeg','image/png','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if(!allowedMime.includes(file.type)) return json({error:'Format non autorisé.'},400);
+    const buf=await file.arrayBuffer();
+    await env.JOB_DB.prepare('INSERT INTO recruiter_documents(user_id,document_type,file_name,mime_type,size_bytes,content) VALUES(?,?,?,?,?,?)').bind(s.user.id,type,safeText(file.name,180),file.type,file.size,buf).run();
+    return json({ok:true,completeness:await recruiterCompleteness(env,s.user.id)},201);
+  }
+  if(/^\/api\/recruiter\/documents\/\d+$/.test(p)&&m==='DELETE'){ const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403); const id=Number(p.split('/').pop()); await env.JOB_DB.prepare('DELETE FROM recruiter_documents WHERE id=? AND user_id=?').bind(id,s.user.id).run(); return json({ok:true}); }
+  if(p==='/api/recruiter/verification/submit'&&m==='POST'){
+    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403); await ensureRecruiterSchema(env);
+    const r=await env.JOB_DB.prepare('SELECT company_name,organization_type,sector,main_domain,company_country,company_city FROM recruiter_profiles WHERE user_id=?').bind(s.user.id).first();
+    const d=await env.JOB_DB.prepare('SELECT COUNT(*) n FROM recruiter_documents WHERE user_id=?').bind(s.user.id).first();
+    if(!r?.company_name||!r?.organization_type||!r?.sector||!r?.main_domain||!r?.company_country||!r?.company_city||!Number(d?.n)) return json({error:'Complétez les informations principales de l’entreprise et ajoutez au moins un document officiel avant de demander la vérification.'},400);
+    await env.JOB_DB.prepare("UPDATE recruiter_profiles SET verification_status='pending',verification_note=NULL,company_info_verified=1,updated_at=? WHERE user_id=?").bind(nowISO(),s.user.id).run();
+    await audit(env,s.user.id,'RECRUITER_VERIFICATION_SUBMITTED','recruiter',s.user.id);
+    return json({ok:true,status:'pending'});
+  }
+  if(p==='/api/recruiter/jobs'&&m==='GET'){ const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403); const rows=await env.JOB_DB.prepare('SELECT * FROM jobs WHERE recruiter_id=? ORDER BY id DESC').bind(s.user.id).all(); return json({jobs:rows.results||[]}); }
+  if(p==='/api/recruiter/applications'&&m==='GET'){ const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403); const rows=await env.JOB_DB.prepare(`SELECT a.*,j.title,p.first_name,p.last_name,p.profession,p.city,u.email,u.phone FROM applications a JOIN jobs j ON j.id=a.job_id JOIN users u ON u.id=a.candidate_id LEFT JOIN candidate_profiles p ON p.user_id=a.candidate_id WHERE j.recruiter_id=? ORDER BY a.id DESC`).bind(s.user.id).all(); return json({applications:rows.results||[]}); }
   if(p==='/api/jobs'&&m==='GET'){
     const rows=await env.JOB_DB.prepare("SELECT j.*, r.company_name FROM jobs j LEFT JOIN recruiter_profiles r ON r.user_id=j.recruiter_id WHERE j.status='published' ORDER BY j.id DESC LIMIT 100").all(); return json({jobs:rows.results});
   }
@@ -227,6 +345,8 @@ async function api(req,env,url){
     }
     return json({ok:true});
   }
+  if(p==='/api/admin/recruiter-verifications'&&m==='GET'){ await requireAdmin(req,env); await ensureRecruiterSchema(env); const rows=await env.JOB_DB.prepare(`SELECT r.user_id,r.first_name,r.last_name,r.job_title,r.company_name,r.organization_type,r.sector,r.company_city,r.verification_status,r.verification_note,u.email,u.phone FROM recruiter_profiles r JOIN users u ON u.id=r.user_id WHERE r.verification_status='pending' ORDER BY r.updated_at DESC`).all(); return json({recruiters:rows.results||[]}); }
+  if(/^\/api\/admin\/recruiters\/\d+\/(verify|reject)$/.test(p)&&m==='POST'){ const s=await requireAdmin(req,env), parts=p.split('/'), userId=Number(parts[4]), action=parts[5]; await ensureRecruiterSchema(env); const b=await req.json().catch(()=>({})); const status=action==='verify'?'verified':'unverified'; await env.JOB_DB.prepare('UPDATE recruiter_profiles SET verification_status=?,verification_note=?,email_verified=?,phone_verified=?,company_info_verified=?,official_document_verified=?,updated_at=? WHERE user_id=?').bind(status,action==='verify'?null:safeText(b.note,500)||'Vérification refusée',action==='verify'?1:0,action==='verify'?1:0,action==='verify'?1:0,action==='verify'?1:0,nowISO(),userId).run(); await env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'verification', ?, ?)").bind(userId,action==='verify'?'Entreprise vérifiée':'Vérification à compléter',action==='verify'?'Votre compte recruteur GLOBAL EMPLOI est maintenant vérifié.':'Votre demande de vérification nécessite des corrections. Consultez votre profil entreprise.').run(); await audit(env,s.user.id,action==='verify'?'RECRUITER_VERIFIED':'RECRUITER_VERIFICATION_REJECTED','recruiter',userId); return json({ok:true,status}); }
   if(p==='/api/admin/users'&&m==='GET'){ await requireAdmin(req,env); const rows=await env.JOB_DB.prepare(`SELECT u.id,u.email,u.phone,u.role,u.status,u.created_at,s.plan,s.expires_at FROM users u LEFT JOIN subscriptions s ON s.id=(SELECT id FROM subscriptions WHERE user_id=u.id ORDER BY datetime(expires_at) DESC LIMIT 1) ORDER BY u.id DESC LIMIT 500`).all(); return json({users:rows.results}); }
   return json({error:'Route API introuvable.'},404);
 }

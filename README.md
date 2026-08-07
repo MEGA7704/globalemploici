@@ -103,3 +103,18 @@ Erreurs explicites possibles :
 - `KV_UNAVAILABLE` : KV est mal lié ou indisponible.
 
 Les erreurs serveur renvoient aussi une `reference` correspondant au CF-Ray quand disponible. Utilisez cette référence dans les logs Cloudflare pour retrouver l'erreur, sans exposer de secret dans le navigateur.
+
+## V4 — Profil complet du demandeur d'emploi
+La première inscription du demandeur reste volontairement courte : informations personnelles + création du compte. Après connexion, **Mon profil** permet de compléter : informations professionnelles, formations/diplômes, expériences, recherche d'emploi, documents, langues et préférences.
+
+Le tableau de bord affiche un **pourcentage de complétude** et des recommandations (CV, expérience, compétences, diplôme, langues). La V4 ajoute aussi `migrations/0002_candidate_profile.sql` pour documenter l'évolution du schéma. Le Worker sait créer/compléter ce schéma candidat automatiquement lors du premier accès, afin de rester compatible avec une base D1 V3 déjà en production.
+
+Les pièces jointes candidat sont stockées de façon privée dans D1, accessibles uniquement via une session valide. Limite volontaire : **700 Ko par fichier** pour éviter les erreurs de taille D1. Types acceptés : PDF, DOC, DOCX, JPG, PNG. Pour des documents plus volumineux en production, prévoir ultérieurement un bucket Cloudflare R2.
+
+## V5 — Formulaire recruteur complet
+
+La première inscription Recruteur demande uniquement les informations personnelles du recruteur et la création du compte. Après connexion, **Profil entreprise** permet de compléter : identité du recruteur, entreprise, informations administratives, besoins en recrutement, documents officiels et préférences.
+
+Statuts de vérification : `unverified` → `pending` → `verified`. Le Super Admin peut valider ou renvoyer un dossier à compléter depuis Administration. Les nouveaux schémas sont créés/complétés automatiquement par le Worker pour rester compatibles avec une base D1 déjà utilisée. Le fichier `migrations/0003_recruiter_profile.sql` est fourni pour une initialisation manuelle d'une base qui n'a pas encore reçu ces colonnes.
+
+Menu recruteur : Tableau de bord, Profil entreprise, Publier une offre, Mes offres, Candidatures reçues, Recherche de candidats, Favoris, Messages, Abonnement, Paiements et Paramètres.
