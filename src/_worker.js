@@ -14,6 +14,58 @@ function validEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
 function sessionCookie(token,maxAge=86400){ return `ge_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`; }
 function clearCookie(){ return 'ge_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'; }
 
+function serverError(code, message, status=500){
+  return json({error:message, code}, status);
+}
+
+function assertBindings(env){
+  const missing=[];
+  if(!env.JOB_DB) missing.push('JOB_DB');
+  if(!env.JOB_KV) missing.push('JOB_KV');
+  if(!env.ASSETS) missing.push('ASSETS');
+  if(missing.length){
+    const e=new Error(`Missing bindings: ${missing.join(', ')}`);
+    e.code='BINDING_MISSING';
+    e.publicMessage=`Configuration Cloudflare incomplète : binding ${missing.join(', ')} manquant.`;
+    throw e;
+  }
+}
+
+async function checkDatabase(env){
+  try{
+    const row=await env.JOB_DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").first();
+    if(!row){
+      const e=new Error('D1 schema not initialized: users table missing');
+      e.code='D1_NOT_INITIALIZED';
+      e.publicMessage='Base D1 non initialisée. Exécutez migrations/0001_init.sql sur job_d1.';
+      throw e;
+    }
+    return true;
+  }catch(err){
+    if(err && err.code==='D1_NOT_INITIALIZED') throw err;
+    const e=new Error(`D1 unavailable: ${err?.message||err}`);
+    e.code='D1_UNAVAILABLE';
+    e.publicMessage='La base D1 est indisponible ou mal liée au projet.';
+    throw e;
+  }
+}
+
+async function checkKV(env){
+  try{
+    const key='health:'+crypto.randomUUID();
+    await env.JOB_KV.put(key,'1',{expirationTtl:60});
+    const got=await env.JOB_KV.get(key);
+    await env.JOB_KV.delete(key);
+    if(got!=='1') throw new Error('KV read/write test failed');
+    return true;
+  }catch(err){
+    const e=new Error(`KV unavailable: ${err?.message||err}`);
+    e.code='KV_UNAVAILABLE';
+    e.publicMessage='Le namespace KV est indisponible ou mal lié au projet.';
+    throw e;
+  }
+}
+
 async function hashPassword(password, saltBytes){
   const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:saltBytes,iterations:210000}, key, 256);
@@ -83,6 +135,12 @@ async function handleLogin(req,env){
 
 async function api(req,env,url){
   const p=url.pathname, m=req.method;
+  if(p==='/api/health'&&m==='GET'){
+    assertBindings(env);
+    await checkDatabase(env);
+    await checkKV(env);
+    return json({ok:true,service:'GLOBAL EMPLOI',d1:'ok',kv:'ok',assets:'ok'});
+  }
   if(p==='/api/register'&&m==='POST') return handleRegister(req,env);
   if(p==='/api/login'&&m==='POST') return handleLogin(req,env);
   if(p==='/api/logout'&&m==='POST'){ const s=await getSession(req,env); if(s) await env.JOB_KV.delete(`sess:${s.token}`); return json({ok:true},200,{'set-cookie':clearCookie()}); }
@@ -161,11 +219,19 @@ export default {
   async fetch(request, env){
     const url=new URL(request.url);
     try{
-      if(url.pathname.startsWith('/api/')) return await api(request,env,url);
+      assertBindings(env);
+      if(url.pathname.startsWith('/api/')){
+        if(url.pathname!=='/api/health') await checkDatabase(env);
+        return await api(request,env,url);
+      }
       return env.ASSETS.fetch(request);
     } catch(err){
       if(err instanceof Response) return err;
-      console.error(err); return json({error:'Erreur serveur.'},500);
+      const requestId=request.headers.get('cf-ray')||crypto.randomUUID();
+      console.error('GLOBAL_EMPLOI_SERVER_ERROR',{requestId,code:err?.code||'SERVER_ERROR',message:err?.message||String(err),stack:err?.stack});
+      const code=err?.code||'SERVER_ERROR';
+      const message=err?.publicMessage||'Erreur serveur. Consultez les journaux Cloudflare avec la référence indiquée.';
+      return json({error:message,code,reference:requestId},500);
     }
   }
 };

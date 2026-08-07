@@ -82,3 +82,24 @@ npm run build
 ```
 
 Puis déployer `dist/` via Cloudflare Pages ou connecter le dépôt GitHub.
+
+## Diagnostic serveur
+
+Après déploiement, ouvrez :
+
+`https://VOTRE-DOMAINE.pages.dev/api/health`
+
+Réponse attendue :
+
+```json
+{"ok":true,"service":"GLOBAL EMPLOI","d1":"ok","kv":"ok","assets":"ok"}
+```
+
+Erreurs explicites possibles :
+
+- `BINDING_MISSING` : un binding Cloudflare (`JOB_DB`, `JOB_KV` ou `ASSETS`) manque.
+- `D1_NOT_INITIALIZED` : exécuter `migrations/0001_init.sql` sur la base D1 `job_d1`.
+- `D1_UNAVAILABLE` : D1 est mal lié ou indisponible.
+- `KV_UNAVAILABLE` : KV est mal lié ou indisponible.
+
+Les erreurs serveur renvoient aussi une `reference` correspondant au CF-Ray quand disponible. Utilisez cette référence dans les logs Cloudflare pour retrouver l'erreur, sans exposer de secret dans le navigateur.
