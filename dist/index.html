@@ -3,33 +3,137 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="description" content="GLOBAL EMPLOI - plateforme de mise en relation entre candidats, professionnels et recruteurs." />
-  <title>GLOBAL EMPLOI</title>
+  <meta name="description" content="GLOBAL EMPLOI - plateforme ivoirienne de recrutement, d'emploi, de métiers et de mise en relation professionnelle." />
+  <meta name="theme-color" content="#1557D6" />
+  <title>GLOBAL EMPLOI — L'opportunité à portée de main</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="#home"><span class="logo">GE</span><span>GLOBAL <b>EMPLOI</b></span></a>
-  <nav id="publicNav"><a href="#jobs">Offres</a><a href="#candidates">Profils</a><a href="#about">À propos</a></nav>
-  <div class="nav-actions"><button id="loginBtn" class="btn ghost">Connexion</button><button id="registerBtn" class="btn primary">Inscription</button><button id="logoutBtn" class="btn danger hidden">Déconnexion</button></div>
+  <a class="brand" href="#home" aria-label="GLOBAL EMPLOI - Accueil">
+    <span class="logo-mark" aria-hidden="true"><span>G</span><b>E</b></span>
+    <span class="brand-copy"><span class="brand-name"><b>GLOBAL</b> <strong>EMPLOI</strong></span><small>L’opportunité à portée de main</small></span>
+  </a>
+
+  <nav id="publicNav" class="public-nav" aria-label="Navigation principale">
+    <a href="#home" class="active">Accueil</a>
+    <a href="#jobs">Offres d’emploi</a>
+    <a href="#candidates">Profils / Candidats</a>
+    <a href="#companies">Entreprises</a>
+    <a href="#trades">Métiers</a>
+    <a href="#advice">Conseils</a>
+    <a href="#about">À propos</a>
+    <a href="#contact">Contact</a>
+  </nav>
+
+  <div class="nav-actions">
+    <button id="loginBtn" class="btn outline-blue">Se connecter</button>
+    <button id="registerBtn" class="btn primary">S’inscrire</button>
+    <button id="logoutBtn" class="btn danger hidden">Déconnexion</button>
+    <button id="mobileMenuBtn" class="menu-btn" type="button" aria-label="Ouvrir le menu" aria-expanded="false">☰</button>
+  </div>
 </header>
 
 <main>
-<section id="guestHome" class="hero">
-  <div class="hero-copy">
-    <span class="eyebrow">EMPLOI • MÉTIERS • MISSIONS • CONTRATS</span>
-    <h1>Trouvez votre prochaine <span>opportunité.</span></h1>
-    <p>GLOBAL EMPLOI connecte les talents, hommes et femmes de métier, recruteurs, entreprises et particuliers.</p>
-    <div class="hero-actions"><button class="btn primary big" data-open-register="candidate">Je cherche un emploi</button><button class="btn light big" data-open-register="recruiter">Je recrute</button></div>
-    <div class="searchbar"><input id="homeSearch" placeholder="Quel métier recherchez-vous ?"><button class="btn primary" id="homeSearchBtn">Rechercher</button></div>
-  </div>
-  <div class="hero-card">
-    <div class="stat"><strong>7 jours</strong><span>Free candidat</span></div>
-    <div class="stat"><strong>24 h</strong><span>Free recruteur</span></div>
-    <div class="stat"><strong>1 000 F</strong><span>Standard / 30 jours</span></div>
-    <div class="stat"><strong>10 000 F</strong><span>Business / 365 jours</span></div>
-  </div>
-</section>
+<div id="guestHome" class="public-site">
+  <section id="home" class="hero-new">
+    <div class="hero-content">
+      <div class="hero-kicker"><span class="dot"></span> RECRUTEMENT • EMPLOI • MÉTIERS • MISSIONS</div>
+      <h1>Trouvez l’emploi qui <span>vous correspond</span></h1>
+      <p>Des milliers d’opportunités vous attendent. Recherchez, postulez et construisez votre avenir avec <strong>GLOBAL EMPLOI</strong>.</p>
+
+      <div class="job-search" role="search">
+        <div class="search-field">
+          <span class="field-icon" aria-hidden="true">⌕</span>
+          <div><small>Poste recherché</small><input id="homeSearch" placeholder="Développeur, Comptable, Chauffeur, Maçon…" autocomplete="off"></div>
+        </div>
+        <div class="search-divider"></div>
+        <div class="search-field">
+          <span class="field-icon" aria-hidden="true">⌖</span>
+          <div><small>Lieu</small><input id="homeLocation" placeholder="Abidjan, Bouaké, Yamoussoukro…" autocomplete="off"></div>
+        </div>
+        <button class="btn primary search-btn" id="homeSearchBtn"><span aria-hidden="true">⌕</span> Rechercher</button>
+      </div>
+
+      <div class="popular-searches">
+        <span>Recherches populaires :</span>
+        <button data-search="Comptabilité">Comptabilité</button><button data-search="Informatique">Informatique</button><button data-search="Commercial">Commercial</button><button data-search="Marketing">Marketing</button><button data-search="Ressources humaines">Ressources humaines</button><button data-search="Chauffeur">Chauffeur</button><button data-search="Maçonnerie">Maçonnerie</button>
+      </div>
+
+      <div class="hero-cta-row">
+        <button class="btn primary big" data-open-register="candidate">Je cherche un emploi</button>
+        <button class="btn soft-blue big" data-open-register="recruiter">Je recrute</button>
+      </div>
+    </div>
+
+    <div class="hero-visual" aria-label="Professionnel souriant dans un environnement de bureau">
+      <div class="hero-blob"></div>
+      <img src="/hero-professional.jpg" alt="Professionnel africain souriant en costume bleu dans un environnement de bureau" loading="eager">
+      <div class="floating-card floating-top"><span class="mini-icon">✓</span><div><strong>Profils vérifiés</strong><small>Des talents prêts à travailler</small></div></div>
+      <div class="floating-card floating-bottom"><span class="mini-icon orange">↗</span><div><strong>Opportunités</strong><small>Emploi, contrat et mission</small></div></div>
+    </div>
+  </section>
+
+  <section class="stats-wrap" aria-label="Statistiques GLOBAL EMPLOI">
+    <div class="stats-card">
+      <div class="stat-item"><span class="stat-icon">▣</span><div><strong>2 500+</strong><span>Offres d’emploi</span></div></div>
+      <div class="stat-item"><span class="stat-icon">▦</span><div><strong>1 200+</strong><span>Entreprises</span></div></div>
+      <div class="stat-item"><span class="stat-icon">♙</span><div><strong>15 000+</strong><span>Candidats inscrits</span></div></div>
+      <div class="stat-item"><span class="stat-icon">✓</span><div><strong>8 500+</strong><span>Recrutements réussis</span></div></div>
+    </div>
+  </section>
+
+  <section id="jobs" class="section-shell recent-jobs">
+    <div class="section-head"><div><span class="section-kicker">NOUVELLES OPPORTUNITÉS</span><h2>Offres d’emploi récentes</h2><p>Découvrez une sélection d’opportunités proposées sur GLOBAL EMPLOI.</p></div><button class="text-link" data-open-register="candidate">Voir toutes les offres <span>→</span></button></div>
+    <div class="offer-grid">
+      <article class="offer-card"><div class="offer-top"><div class="company-logo sg">SG</div><span class="offer-badge new">Nouveau</span></div><h3>Chargé de Clientèle</h3><p class="company">Société Générale Côte d’Ivoire</p><div class="offer-meta"><span>⌖ Abidjan, Côte d’Ivoire</span><span>▣ CDI</span></div><div class="offer-footer"><small>Publié il y a 2 heures</small><button data-open-register="candidate" aria-label="Voir l'offre">→</button></div></article>
+      <article class="offer-card"><div class="offer-top"><div class="company-logo tel">TEL</div><span class="offer-badge urgent">Urgent</span></div><h3>Responsable Marketing</h3><p class="company">Entreprise télécom</p><div class="offer-meta"><span>⌖ Abidjan</span><span>▣ CDI</span></div><div class="offer-footer"><small>Publié aujourd’hui</small><button data-open-register="candidate" aria-label="Voir l'offre">→</button></div></article>
+      <article class="offer-card"><div class="offer-top"><div class="company-logo adm">ADM</div><span class="offer-badge new">Nouveau</span></div><h3>Assistant Administratif</h3><p class="company">Services & Administration</p><div class="offer-meta"><span>⌖ Yamoussoukro</span><span>▣ CDD</span></div><div class="offer-footer"><small>Publié il y a 1 jour</small><button data-open-register="candidate" aria-label="Voir l'offre">→</button></div></article>
+      <article class="offer-card"><div class="offer-top"><div class="company-logo rh">RH</div><span class="offer-badge new">Nouveau</span></div><h3>Gestionnaire RH</h3><p class="company">Cabinet de recrutement</p><div class="offer-meta"><span>⌖ Abidjan</span><span>▣ CDI</span></div><div class="offer-footer"><small>Publié il y a 1 jour</small><button data-open-register="candidate" aria-label="Voir l'offre">→</button></div></article>
+    </div>
+  </section>
+
+  <section id="candidates" class="section-shell profiles-section">
+    <div class="section-head centered"><div><span class="section-kicker">TALENTS & SAVOIR-FAIRE</span><h2>Des profils pour chaque besoin</h2><p>Demandeurs d’emploi, artisans, techniciens et indépendants peuvent présenter leurs compétences et leur disponibilité.</p></div></div>
+    <div class="profile-types">
+      <div class="profile-type"><span>◫</span><h3>Demandeurs d’emploi</h3><p>Présentez votre parcours, vos compétences et votre disponibilité.</p></div>
+      <div class="profile-type"><span>⚒</span><h3>Hommes & femmes de métier</h3><p>Valorisez votre spécialité et trouvez des missions près de chez vous.</p></div>
+      <div class="profile-type"><span>↗</span><h3>Travailleurs indépendants</h3><p>Accédez à des prestations, contrats et collaborations professionnelles.</p></div>
+    </div>
+  </section>
+
+  <section id="companies" class="section-shell business-banner">
+    <div class="business-icon">▦</div>
+    <div><span class="section-kicker">ESPACE RECRUTEURS</span><h2>Vous êtes une entreprise ?</h2><p>Publiez vos offres d’emploi et trouvez les meilleurs talents.</p></div>
+    <button class="btn primary big" data-open-register="recruiter">Publier une offre</button>
+  </section>
+
+  <section id="trades" class="section-shell trades-section">
+    <div class="section-head centered"><div><span class="section-kicker">DOMAINES PROFESSIONNELS</span><h2>Explorez les métiers</h2><p>Recherchez rapidement les compétences qui correspondent à vos besoins.</p></div></div>
+    <div class="trade-chips"><span>Administration</span><span>Agriculture</span><span>Bâtiment</span><span>Chauffeur</span><span>Commerce</span><span>Comptabilité</span><span>Couture</span><span>Coiffure</span><span>Électricité</span><span>Informatique</span><span>Mécanique</span><span>Menuiserie</span><span>Plomberie</span><span>Restauration</span><span>Sécurité</span><span>Transport</span></div>
+  </section>
+
+  <section id="plans" class="section-shell plans-public">
+    <div class="section-head centered"><div><span class="section-kicker">ABONNEMENTS CANDIDATS</span><h2>Choisissez la formule qui vous convient</h2><p>Commencez gratuitement, puis augmentez la durée et la visibilité de votre profil.</p></div></div>
+    <div class="plans">
+      <article class="plan public-plan"><div class="plan-icon">○</div><h3>FREE</h3><div class="price">0 <small>FCFA</small></div><p class="plan-duration">7 jours gratuits</p><ul><li>✓ Création du profil</li><li>✓ Consultation des offres</li><li>✓ Découverte de la plateforme</li></ul><button class="btn outline-blue full-btn" data-open-register="candidate">Commencer gratuitement</button></article>
+      <article class="plan public-plan featured"><span class="recommended">RECOMMANDÉ</span><div class="plan-icon">★</div><h3>STANDARD</h3><div class="price">1 000 <small>FCFA</small></div><p class="plan-duration">Validité 30 jours</p><ul><li>✓ Profil actif</li><li>✓ Candidatures</li><li>✓ Meilleure visibilité</li><li>✓ Messagerie</li></ul><button class="btn primary full-btn" data-open-register="candidate">Choisir Standard</button></article>
+      <article class="plan public-plan business"><div class="plan-icon">◆</div><h3>BUSINESS</h3><div class="price">10 000 <small>FCFA</small></div><p class="plan-duration">Validité 365 jours</p><ul><li>✓ Profil prioritaire</li><li>✓ Visibilité maximale</li><li>✓ Accès complet aux opportunités</li><li>✓ Messagerie</li></ul><button class="btn dark-btn full-btn" data-open-register="candidate">Choisir Business</button></article>
+    </div>
+  </section>
+
+  <section id="advice" class="section-shell advice-strip"><div><span class="section-kicker">CONSEILS CARRIÈRE</span><h2>Préparez mieux votre prochaine opportunité</h2><p>Un profil clair, des compétences bien présentées et une candidature adaptée augmentent vos chances d’être remarqué.</p></div><button class="btn soft-blue" data-open-register="candidate">Créer mon profil</button></section>
+
+  <section id="about" class="section-shell about-section"><div><span class="section-kicker">À PROPOS</span><h2>GLOBAL EMPLOI rapproche les talents et les recruteurs</h2></div><p>La plateforme facilite la mise en relation entre demandeurs d’emploi, professionnels de métier, travailleurs indépendants, entreprises et particuliers pour des emplois, contrats, missions et prestations.</p></section>
+
+  <footer id="contact" class="site-footer">
+    <div class="footer-main"><div class="footer-brand"><div class="brand-name"><b>GLOBAL</b> <strong>EMPLOI</strong></div><p>L’opportunité à portée de main.</p></div><div><h4>Plateforme</h4><a href="#jobs">Offres d’emploi</a><a href="#candidates">Profils</a><a href="#trades">Métiers</a></div><div><h4>Recrutement</h4><button data-open-register="recruiter">Créer un compte recruteur</button><button data-open-register="candidate">Créer un profil candidat</button></div><div><h4>Contact</h4><p>Côte d’Ivoire</p><p>Support GLOBAL EMPLOI</p></div></div>
+    <div class="footer-bottom"><span>© 2026 GLOBAL EMPLOI. Tous droits réservés.</span><span>Plateforme sécurisée Cloudflare</span></div>
+  </footer>
+</div>
 
 <section id="app" class="app hidden">
   <aside class="sidebar">
@@ -49,7 +153,7 @@
 </section>
 </main>
 
-<div id="modal" class="modal hidden"><div class="modal-card"><button class="modal-x" id="closeModal">×</button><div id="modalBody"></div></div></div>
+<div id="modal" class="modal hidden"><div class="modal-card"><button class="modal-x" id="closeModal" aria-label="Fermer">×</button><div id="modalBody"></div></div></div>
 <div id="toast" class="toast hidden"></div>
 <script src="/app.js" defer></script>
 </body>
