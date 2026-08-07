@@ -32,7 +32,26 @@
   <div class="nav-actions">
     <button id="loginBtn" class="btn outline-blue">Se connecter</button>
     <button id="registerBtn" class="btn primary">S’inscrire</button>
-    <button id="logoutBtn" class="btn danger hidden">Déconnexion</button>
+
+    <div id="accountControl" class="account-control hidden">
+      <button id="accountBtn" class="account-btn" type="button" aria-haspopup="menu" aria-expanded="false">
+        <span class="account-avatar" aria-hidden="true">♙</span>
+        <span class="account-copy"><small>Connecté</small><strong id="accountLabel">Mon compte</strong></span>
+        <span class="online-dot" title="En ligne" aria-label="En ligne"></span>
+        <span class="account-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div id="accountMenu" class="account-menu" role="menu" aria-hidden="true">
+        <div class="account-menu-head">
+          <div class="account-menu-avatar" aria-hidden="true">♙</div>
+          <div><span class="online-label"><i></i> Connecté</span><strong id="menuAccountName">Mon compte</strong><small id="menuAccountEmail">—</small><span id="menuAccountRole" class="account-role">UTILISATEUR</span></div>
+        </div>
+        <nav id="accountMenuItems" class="account-menu-items" aria-label="Menu du compte"></nav>
+        <div class="account-menu-footer">
+          <button id="accountLogoutBtn" class="account-logout" type="button"><span aria-hidden="true">⇥</span><b>Déconnexion</b></button>
+        </div>
+      </div>
+    </div>
+
     <button id="mobileMenuBtn" class="menu-btn" type="button" aria-label="Ouvrir le menu" aria-expanded="false">☰</button>
   </div>
 </header>

@@ -118,3 +118,7 @@ La première inscription Recruteur demande uniquement les informations personnel
 Statuts de vérification : `unverified` → `pending` → `verified`. Le Super Admin peut valider ou renvoyer un dossier à compléter depuis Administration. Les nouveaux schémas sont créés/complétés automatiquement par le Worker pour rester compatibles avec une base D1 déjà utilisée. Le fichier `migrations/0003_recruiter_profile.sql` est fourni pour une initialisation manuelle d'une base qui n'a pas encore reçu ces colonnes.
 
 Menu recruteur : Tableau de bord, Profil entreprise, Publier une offre, Mes offres, Candidatures reçues, Recherche de candidats, Favoris, Messages, Abonnement, Paiements et Paramètres.
+
+## V6 — Menu de compte connecté
+
+Lorsque la session est absente, la barre supérieure affiche **Se connecter** et **S’inscrire**. Lorsqu’une session valide existe, ces boutons sont remplacés par **Mon compte**, avec indicateur vert de présence et un menu de compte adapté au rôle (Demandeur, Recruteur ou Super Admin). Le menu se ferme au clic extérieur ou avec `Échap`, synchronise l’élément actif avec le tableau de bord et place **Déconnexion** dans une zone séparée en bas.
