@@ -33,11 +33,14 @@ function assertBindings(env){
 
 async function checkDatabase(env){
   try{
-    const row=await env.JOB_DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").first();
-    if(!row){
-      const e=new Error('D1 schema not initialized: users table missing');
-      e.code='D1_NOT_INITIALIZED';
-      e.publicMessage='Base D1 non initialisée. Exécutez migrations/0001_init.sql sur job_d1.';
+    const required=['users','candidate_profiles','recruiter_profiles','subscriptions','subscription_requests','jobs','applications','conversations','conversation_members','messages','notifications','audit_logs'];
+    const rows=await env.JOB_DB.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+    const have=new Set((rows.results||[]).map(r=>r.name));
+    const missing=required.filter(t=>!have.has(t));
+    if(missing.length){
+      const e=new Error('D1 schema incomplete: '+missing.join(', '));
+      e.code='D1_SCHEMA_INCOMPLETE';
+      e.publicMessage='Schéma D1 incomplet. Tables manquantes : '+missing.join(', ');
       throw e;
     }
     return true;
@@ -68,7 +71,7 @@ async function checkKV(env){
 
 async function hashPassword(password, saltBytes){
   const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:saltBytes,iterations:210000}, key, 256);
+  const bits = await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:saltBytes,iterations:100000}, key, 256);
   return b64(new Uint8Array(bits));
 }
 async function createPassword(password){ const salt=crypto.getRandomValues(new Uint8Array(16)); return {salt:b64(salt), hash:await hashPassword(password,salt)}; }
@@ -108,14 +111,27 @@ async function handleRegister(req,env){
   const email=safeText(b.email,190).toLowerCase(), password=String(b.password||''), phone=safeText(b.phone,40);
   if(!validEmail(email)||password.length<8) return json({error:'E-mail invalide ou mot de passe trop court.'},400);
   const exists=await env.JOB_DB.prepare('SELECT id FROM users WHERE email=?').bind(email).first(); if(exists) return json({error:'Ce compte existe déjà.'},409);
-  const p=await createPassword(password);
-  const r=await env.JOB_DB.prepare('INSERT INTO users(email,phone,password_hash,password_salt,role) VALUES(?,?,?,?,?) RETURNING id,email,phone,role,status,session_version').bind(email,phone,p.hash,p.salt,role).first();
-  if(role==='candidate') await env.JOB_DB.prepare('INSERT INTO candidate_profiles(user_id,first_name,last_name,profession,city) VALUES(?,?,?,?,?)').bind(r.id,safeText(b.first_name,100),safeText(b.last_name,100),safeText(b.profession,150),safeText(b.city,120)).run();
-  else await env.JOB_DB.prepare('INSERT INTO recruiter_profiles(user_id,recruiter_type,company_name,activity,city) VALUES(?,?,?,?,?)').bind(r.id,safeText(b.recruiter_type,80),safeText(b.company_name,180),safeText(b.activity,180),safeText(b.city,120)).run();
-  const expires=role==='candidate'?addDays(7):new Date(Date.now()+24*3600*1000).toISOString();
-  await env.JOB_DB.prepare('INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status) VALUES(?,?,?,?,?)').bind(r.id,'free',nowISO(),expires,'active').run();
-  const token=await createSession(env,r); await audit(env,r.id,'REGISTER','user',r.id,{role});
-  return json({ok:true,user:{id:r.id,email:r.email,role:r.role},subscription:await currentSubscription(env,r.id)},201,{'set-cookie':sessionCookie(token)});
+  let userId=null;
+  try{
+    const p=await createPassword(password);
+    const ins=await env.JOB_DB.prepare('INSERT INTO users(email,phone,password_hash,password_salt,role) VALUES(?,?,?,?,?)').bind(email,phone,p.hash,p.salt,role).run();
+    userId=Number(ins?.meta?.last_row_id);
+    if(!userId) throw new Error('User insert did not return last_row_id');
+    if(role==='candidate') await env.JOB_DB.prepare('INSERT INTO candidate_profiles(user_id,first_name,last_name,profession,city) VALUES(?,?,?,?,?)').bind(userId,safeText(b.first_name,100),safeText(b.last_name,100),safeText(b.profession,150),safeText(b.city,120)).run();
+    else await env.JOB_DB.prepare('INSERT INTO recruiter_profiles(user_id,recruiter_type,company_name,activity,city) VALUES(?,?,?,?,?)').bind(userId,safeText(b.recruiter_type,80),safeText(b.company_name,180),safeText(b.activity,180),safeText(b.city,120)).run();
+    const expires=role==='candidate'?addDays(7):new Date(Date.now()+24*3600*1000).toISOString();
+    await env.JOB_DB.prepare('INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status) VALUES(?,?,?,?,?)').bind(userId,'free',nowISO(),expires,'active').run();
+    const r=await env.JOB_DB.prepare('SELECT id,email,phone,role,status,session_version FROM users WHERE id=?').bind(userId).first();
+    const token=await createSession(env,r); await audit(env,r.id,'REGISTER','user',r.id,{role});
+    return json({ok:true,user:{id:r.id,email:r.email,role:r.role},subscription:await currentSubscription(env,r.id)},201,{'set-cookie':sessionCookie(token)});
+  }catch(err){
+    if(userId){ try{ await env.JOB_DB.prepare('DELETE FROM users WHERE id=?').bind(userId).run(); }catch{} }
+    console.error('GLOBAL_EMPLOI_REGISTER_ERROR',{role,email,message:err?.message||String(err),stack:err?.stack});
+    const e=new Error(err?.message||'Registration failed');
+    e.code='REGISTRATION_FAILED';
+    e.publicMessage='Échec de création du compte. Vérifiez la configuration Cloudflare et réessayez.';
+    throw e;
+  }
 }
 
 async function handleLogin(req,env){
