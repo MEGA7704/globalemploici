@@ -1,0 +1,13 @@
+{
+  "name": "global-emploi",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler pages dev dist --compatibility-date=2026-08-07",
+    "build": "node scripts/build.mjs",
+    "deploy": "npm run build && wrangler pages deploy dist"
+  },
+  "devDependencies": {
+    "wrangler": "^4.28.1"
+  }
+}

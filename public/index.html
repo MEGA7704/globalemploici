@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="GLOBAL EMPLOI - plateforme de mise en relation entre candidats, professionnels et recruteurs." />
+  <title>GLOBAL EMPLOI</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="#home"><span class="logo">GE</span><span>GLOBAL <b>EMPLOI</b></span></a>
+  <nav id="publicNav"><a href="#jobs">Offres</a><a href="#candidates">Profils</a><a href="#about">À propos</a></nav>
+  <div class="nav-actions"><button id="loginBtn" class="btn ghost">Connexion</button><button id="registerBtn" class="btn primary">Inscription</button><button id="logoutBtn" class="btn danger hidden">Déconnexion</button></div>
+</header>
+
+<main>
+<section id="guestHome" class="hero">
+  <div class="hero-copy">
+    <span class="eyebrow">EMPLOI • MÉTIERS • MISSIONS • CONTRATS</span>
+    <h1>Trouvez votre prochaine <span>opportunité.</span></h1>
+    <p>GLOBAL EMPLOI connecte les talents, hommes et femmes de métier, recruteurs, entreprises et particuliers.</p>
+    <div class="hero-actions"><button class="btn primary big" data-open-register="candidate">Je cherche un emploi</button><button class="btn light big" data-open-register="recruiter">Je recrute</button></div>
+    <div class="searchbar"><input id="homeSearch" placeholder="Quel métier recherchez-vous ?"><button class="btn primary" id="homeSearchBtn">Rechercher</button></div>
+  </div>
+  <div class="hero-card">
+    <div class="stat"><strong>7 jours</strong><span>Free candidat</span></div>
+    <div class="stat"><strong>24 h</strong><span>Free recruteur</span></div>
+    <div class="stat"><strong>1 000 F</strong><span>Standard / 30 jours</span></div>
+    <div class="stat"><strong>10 000 F</strong><span>Business / 365 jours</span></div>
+  </div>
+</section>
+
+<section id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="welcome"><small>Connecté</small><strong id="who">Utilisateur</strong><span id="roleBadge" class="badge"></span></div>
+    <button class="side active" data-view="dashboard">Tableau de bord</button>
+    <button class="side" data-view="profile">Mon profil</button>
+    <button class="side" data-view="jobs">Offres d'emploi</button>
+    <button class="side" data-view="candidates">Profils professionnels</button>
+    <button class="side" data-view="messages">Messages</button>
+    <button class="side" data-view="subscription">Abonnement</button>
+    <button class="side admin-only hidden" data-view="admin">Administration</button>
+  </aside>
+  <section class="workspace">
+    <div class="workspace-head"><div><span class="eyebrow">GLOBAL EMPLOI</span><h2 id="viewTitle">Tableau de bord</h2></div><div id="subscriptionChip" class="sub-chip"></div></div>
+    <div id="viewContent"></div>
+  </section>
+</section>
+</main>
+
+<div id="modal" class="modal hidden"><div class="modal-card"><button class="modal-x" id="closeModal">×</button><div id="modalBody"></div></div></div>
+<div id="toast" class="toast hidden"></div>
+<script src="/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "global-emploi",
+  "compatibility_date": "2026-08-07",
+  "pages_build_output_dir": "./dist",
+  "d1_databases": [
+    {
+      "binding": "JOB_DB",
+      "database_name": "job_d1",
+      "database_id": "45eff580-df79-4e87-af69-bc050bc97cea"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "JOB_KV",
+      "id": "9b77109e8a2049cc85f68544e00a0acb"
+    }
+  ]
+}
