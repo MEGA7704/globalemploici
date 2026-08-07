@@ -119,6 +119,10 @@ Statuts de vérification : `unverified` → `pending` → `verified`. Le Super A
 
 Menu recruteur : Tableau de bord, Profil entreprise, Publier une offre, Mes offres, Candidatures reçues, Recherche de candidats, Favoris, Messages, Abonnement, Paiements et Paramètres.
 
-## V6 — Menu de compte connecté
-
-Lorsque la session est absente, la barre supérieure affiche **Se connecter** et **S’inscrire**. Lorsqu’une session valide existe, ces boutons sont remplacés par **Mon compte**, avec indicateur vert de présence et un menu de compte adapté au rôle (Demandeur, Recruteur ou Super Admin). Le menu se ferme au clic extérieur ou avec `Échap`, synchronise l’élément actif avec le tableau de bord et place **Déconnexion** dans une zone séparée en bas.
+## V7 — Navigation compte simplifiée
+- La page d'accueil publique reste affichée après connexion.
+- Les boutons Se connecter / S'inscrire sont remplacés uniquement par Mon compte.
+- Aucun ancien espace connecté ni menu vertical latéral n'est affiché automatiquement.
+- Les rubriques privées s'ouvrent uniquement après sélection dans le menu déroulant Mon compte.
+- Les pages privées sont affichées en pleine largeur, sans ancienne sidebar.
+- Le bouton « ← Accueil » permet de revenir à la page publique.

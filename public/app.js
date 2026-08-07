@@ -1,5 +1,5 @@
 const $=(s)=>document.querySelector(s), $$=(s)=>[...document.querySelectorAll(s)];
-const state={session:null,view:'dashboard',freeTimer:null};
+const state={session:null,view:'home',freeTimer:null};
 const api=async(path,options={})=>{const r=await fetch(path,{headers:{'content-type':'application/json',...(options.headers||{})},...options});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Erreur');return d};
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.remove('hidden');setTimeout(()=>t.classList.add('hidden'),3200)}
 function modal(html){$('#modalBody').innerHTML=html;$('#modal').classList.remove('hidden')}
@@ -75,7 +75,6 @@ function registerModal(role='candidate'){
       await api('/api/register',{method:'POST',body:JSON.stringify(f)});
       closeModal(); await boot();
       toast(candidate?'Compte créé. Complétez maintenant votre profil professionnel.':'Compte recruteur créé. Complétez maintenant votre Profil entreprise.');
-      render('profile');
     }catch(err){toast(err.message)}
   };
 }
@@ -102,17 +101,32 @@ function accountItems(role){
 }
 function buildAccountMenu(){const u=state.session?.user;if(!u)return;const role=roleLabel(u.role);$('#accountLabel').textContent='Mon compte';$('#menuAccountEmail').textContent=u.email;$('#menuAccountRole').textContent=role;$('#menuAccountName').textContent=u.email.split('@')[0]||'Mon compte';const nav=$('#accountMenuItems');nav.innerHTML=accountItems(u.role).map(([view,icon,label])=>`<button class="account-menu-link ${state.view===view?'active':''}" type="button" data-account-view="${view}" role="menuitem"><span>${icon}</span><b>${label}</b></button>`).join('');$$('[data-account-view]').forEach(b=>b.onclick=()=>{navigateView(b.dataset.accountView);closeAccountMenu()});loadAccountDisplayName()}
 async function loadAccountDisplayName(){try{const d=await api('/api/profile'),p=d.profile||{};const full=[p.first_name,p.last_name].filter(Boolean).join(' ').trim();const company=p.company_name||p.commercial_name||'';const label=company||full;if(label){$('#accountLabel').textContent=label.length>20?label.slice(0,20)+'…':label;$('#menuAccountName').textContent=label}}catch{}}
-function syncViewNavigation(view){$$('.side').forEach(x=>x.classList.toggle('active',x.dataset.view===view));$$('[data-account-view]').forEach(x=>x.classList.toggle('active',x.dataset.accountView===view))}
-function navigateView(view){syncViewNavigation(view);render(view)}
+function syncViewNavigation(view){$$('[data-account-view]').forEach(x=>x.classList.toggle('active',x.dataset.accountView===view))}
+function showPublicHome(anchor='home'){
+  state.view='home';
+  $('#guestHome').classList.remove('hidden');
+  $('#app').classList.add('hidden');
+  syncViewNavigation('home');
+  closeAccountMenu();
+  if(anchor){setTimeout(()=>document.getElementById(anchor)?.scrollIntoView({behavior:'smooth',block:'start'}),20)}
+}
+function navigateView(view){
+  if(!state.session)return loginModal();
+  $('#guestHome').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  syncViewNavigation(view);
+  render(view);
+  window.scrollTo({top:0,behavior:'smooth'});
+}
 
 async function boot(){
-  try{state.session=await api('/api/session');showApp();render('dashboard');scheduleFreePopup();}
+  try{state.session=await api('/api/session');showConnectedHome();scheduleFreePopup();}
   catch{state.session=null;showGuest();}
 }
-function showGuest(){$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');$('#loginBtn').classList.remove('hidden');$('#registerBtn').classList.remove('hidden');$('#accountControl').classList.add('hidden');closeAccountMenu()}
-function showApp(){const u=state.session.user;$('#guestHome').classList.add('hidden');$('#app').classList.remove('hidden');$('#loginBtn').classList.add('hidden');$('#registerBtn').classList.add('hidden');$('#accountControl').classList.remove('hidden');$('#who').textContent=u.email;$('#roleBadge').textContent=u.role==='candidate'?'DEMANDEUR':u.role==='recruiter'?'RECRUTEUR':'SUPER ADMIN';$('.admin-only')?.classList.toggle('hidden',u.role!=='super_admin');$$('.recruiter-only').forEach(x=>x.classList.toggle('hidden',u.role!=='recruiter'));$$('.candidate-only').forEach(x=>x.classList.toggle('hidden',u.role!=='candidate'));const pb=$('[data-view="profile"]');if(pb)pb.textContent=u.role==='recruiter'?'Profil entreprise':'Mon profil';const jb=$('[data-view="jobs"]');if(jb)jb.textContent=u.role==='recruiter'?'Publier une offre':'Offres d’emploi';const cb=$('[data-view="candidates"]');if(cb)cb.textContent=u.role==='recruiter'?'Recherche de candidats':'Profils professionnels';buildAccountMenu();updateSubChip()}
+function showGuest(){state.view='home';$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');$('#loginBtn').classList.remove('hidden');$('#registerBtn').classList.remove('hidden');$('#accountControl').classList.add('hidden');closeAccountMenu()}
+function showConnectedHome(){const u=state.session.user;state.view='home';$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');$('#loginBtn').classList.add('hidden');$('#registerBtn').classList.add('hidden');$('#accountControl').classList.remove('hidden');buildAccountMenu();updateSubChip();syncViewNavigation('home')}
 function updateSubChip(){const s=state.session.subscription;if(!s){$('#subscriptionChip').textContent='Aucun abonnement';return}const d=new Date(s.expires_at).toLocaleDateString('fr-FR');$('#subscriptionChip').textContent=`${s.plan.toUpperCase()} • jusqu'au ${d}`}
-$$('.side').forEach(b=>b.onclick=()=>{if(b.classList.contains('hidden'))return;navigateView(b.dataset.view)});
+$('#backHomeBtn')?.addEventListener('click',()=>showPublicHome('home'));
 async function render(view){state.view=view;syncViewNavigation(view);const c=$('#viewContent'),t=$('#viewTitle');const names={dashboard:'Tableau de bord',profile:state.session?.user?.role==='recruiter'?'Profil entreprise':'Mon profil',jobs:"Publier une offre / Offres d'emploi",myjobs:'Mes offres',applications:'Candidatures reçues',candidates:'Recherche de candidats',favorites:'Favoris',messages:'Messages',subscription:'Abonnement',payments:'Paiements',settings:'Paramètres',admin:'Administration'};t.textContent=names[view]||view;c.innerHTML='<div class="panel">Chargement…</div>';try{if(view==='dashboard')return renderDashboard();if(view==='profile')return renderProfile();if(view==='jobs')return renderJobs();if(view==='myjobs')return renderMyJobs();if(view==='applications')return renderRecruiterApplications();if(view==='candidates')return renderCandidates();if(view==='favorites')return renderFavorites();if(view==='messages')return renderMessages();if(view==='subscription'||view==='payments')return renderSubscription();if(view==='settings')return renderSettings();if(view==='admin')return renderAdmin();}catch(e){c.innerHTML=`<div class="panel"><b>Erreur :</b> ${esc(e.message)}</div>`}}
 
 async function renderDashboard(){const u=state.session.user,s=state.session.subscription;if(u.role==='candidate'){let c={percent:0,recommendations:[]};try{c=await api('/api/profile/completeness')}catch{}$('#viewContent').innerHTML=`<div class="profile-progress-card"><div><span class="section-kicker">VOTRE PROFIL</span><h3>Profil complété à ${c.percent}%</h3><p class="muted">Un profil complet améliore votre présentation auprès des recruteurs.</p></div><div class="progress-ring"><strong>${c.percent}%</strong></div><div class="progress-track"><span style="width:${c.percent}%"></span></div>${c.recommendations.length?`<div class="recommendations">${c.recommendations.slice(0,4).map(x=>`<button class="recommendation go-profile">+ ${esc(x)}</button>`).join('')}</div>`:''}</div><div class="grid"><div class="card metric"><span>Type de compte</span><strong>Demandeur</strong></div><div class="card metric"><span>Formule</span><strong>${s?.plan?.toUpperCase()||'—'}</strong></div><div class="card metric"><span>Statut</span><strong>${s?.effective_status==='active'?'Actif':'Expiré'}</strong></div><div class="card metric"><span>Profil</span><strong>${c.percent}%</strong></div></div>`;$$('.go-profile').forEach(b=>b.onclick=()=>render('profile'));return}if(u.role==='recruiter'){let d={completeness:{percent:0,recommendations:[],verification_status:'unverified'}};try{d=await api('/api/profile')}catch{}const c=d.completeness||{percent:0,recommendations:[],verification_status:'unverified'};const vs=c.verification_status==='verified'?'Entreprise vérifiée ✓':c.verification_status==='pending'?'Vérification en cours':'Compte non vérifié';$('#viewContent').innerHTML=`<div class="verification-card ${c.verification_status||'unverified'}"><div><span class="section-kicker">ESPACE RECRUTEUR</span><h3>${vs}</h3><p>Profil entreprise complété à ${c.percent}%.</p></div><button class="btn ghost go-profile">Compléter le profil</button></div><div class="grid"><div class="card metric"><span>Type de compte</span><strong>Recruteur</strong></div><div class="card metric"><span>Formule</span><strong>${s?.plan?.toUpperCase()||'—'}</strong></div><div class="card metric"><span>Vérification</span><strong>${c.verification_status==='verified'?'✓':'…'}</strong></div><div class="card metric"><span>Profil</span><strong>${c.percent}%</strong></div></div>`;$('.go-profile')?.addEventListener('click',()=>render('profile'));return}$('#viewContent').innerHTML=`<div class="grid"><div class="card metric"><span>Type de compte</span><strong>Super Admin</strong></div><div class="card metric"><span>Administration</span><strong>✓</strong></div></div>`}
@@ -275,6 +289,13 @@ async function adminAction(id,action){try{await api(`/api/admin/subscription-req
 
 function scheduleFreePopup(){clearInterval(state.freeTimer);const s=state.session.subscription;if(!s||s.plan!=='free'||s.effective_status!=='active')return;state.freeTimer=setInterval(()=>{if(!$('#modal').classList.contains('hidden'))return;modal(`<h2>Passez à une formule supérieure</h2><p class="muted">Profitez plus longtemps de GLOBAL EMPLOI.</p><div class="plans" style="grid-template-columns:1fr 1fr"><div class="plan featured"><h3>STANDARD</h3><div class="price">1 000 F</div><p>30 jours</p><a class="btn primary" target="_blank" rel="noopener" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=1000">Choisir STANDARD</a></div><div class="plan"><h3>BUSINESS</h3><div class="price">10 000 F</div><p>365 jours</p><a class="btn primary" target="_blank" rel="noopener" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=10000">Choisir BUSINESS</a></div></div><br><button class="btn ghost" onclick="document.querySelector('#modal').classList.add('hidden')">Plus tard</button>`);},300000)}
 function esc(v=''){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+// La navigation publique reste disponible même après connexion.
+$$('a[href^="#"]').forEach(a=>a.addEventListener('click',e=>{
+  const id=(a.getAttribute('href')||'').slice(1);
+  if(!id)return;
+  if(state.session && !$('#app').classList.contains('hidden')){e.preventDefault();showPublicHome(id)}
+}));
+
 const mobileMenuBtn=$('#mobileMenuBtn');
 if(mobileMenuBtn){mobileMenuBtn.onclick=()=>{const nav=$('#publicNav');const open=nav.classList.toggle('open');mobileMenuBtn.setAttribute('aria-expanded',String(open));};$$('#publicNav a').forEach(a=>a.addEventListener('click',()=>{$('#publicNav').classList.remove('open');mobileMenuBtn.setAttribute('aria-expanded','false')}));}
 $$('[data-search]').forEach(b=>b.onclick=()=>{const input=$('#homeSearch');if(input)input.value=b.dataset.search||b.textContent.trim();input?.focus();});

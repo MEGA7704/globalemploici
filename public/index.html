@@ -154,24 +154,12 @@
   </footer>
 </div>
 
-<section id="app" class="app hidden">
-  <aside class="sidebar">
-    <div class="welcome"><small>Connecté</small><strong id="who">Utilisateur</strong><span id="roleBadge" class="badge"></span></div>
-    <button class="side active" data-view="dashboard">Tableau de bord</button>
-    <button class="side" data-view="profile">Mon profil</button>
-    <button class="side" data-view="jobs">Offres d'emploi</button>
-    <button class="side recruiter-only hidden" data-view="myjobs">Mes offres</button>
-    <button class="side recruiter-only hidden" data-view="applications">Candidatures reçues</button>
-    <button class="side" data-view="candidates">Profils professionnels</button>
-    <button class="side recruiter-only hidden" data-view="favorites">Favoris</button>
-    <button class="side" data-view="messages">Messages</button>
-    <button class="side" data-view="subscription">Abonnement</button>
-    <button class="side recruiter-only hidden" data-view="payments">Paiements</button>
-    <button class="side" data-view="settings">Paramètres</button>
-    <button class="side admin-only hidden" data-view="admin">Administration</button>
-  </aside>
+<section id="app" class="app account-workspace hidden">
   <section class="workspace">
-    <div class="workspace-head"><div><span class="eyebrow">GLOBAL EMPLOI</span><h2 id="viewTitle">Tableau de bord</h2></div><div id="subscriptionChip" class="sub-chip"></div></div>
+    <div class="workspace-head">
+      <div class="workspace-title-block"><button id="backHomeBtn" class="back-home" type="button">← Accueil</button><span class="eyebrow">GLOBAL EMPLOI • MON COMPTE</span><h2 id="viewTitle">Tableau de bord</h2></div>
+      <div id="subscriptionChip" class="sub-chip"></div>
+    </div>
     <div id="viewContent"></div>
   </section>
 </section>

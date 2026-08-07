@@ -20,3 +20,14 @@
 @media(max-width:1180px){.nav-actions #loginBtn,.nav-actions #registerBtn{display:inline-flex}.account-btn{min-width:176px}.account-copy strong{max-width:80px}}
 @media(max-width:760px){.nav-actions{gap:6px}.nav-actions #loginBtn,.nav-actions #registerBtn{padding:9px 10px;font-size:11px}.account-btn{min-width:auto;width:46px;height:46px;padding:6px}.account-copy,.account-chevron{display:none}.account-avatar{width:32px;height:32px;flex-basis:32px}.online-dot{position:absolute;right:4px;bottom:5px;width:8px;height:8px;box-shadow:0 0 0 2px #fff}.account-menu{position:fixed;right:10px;top:76px;width:min(330px,calc(100vw - 20px));max-height:calc(100vh - 88px)}}
 @media(max-width:520px){.nav-actions #loginBtn{display:none}.nav-actions #registerBtn{padding:9px 11px}.account-menu{left:10px;right:10px;width:auto}.account-menu-link{padding:11px}.account-menu-link b{font-size:13px}}
+
+/* V7 — Accueil permanent + espace compte sans ancienne barre verticale */
+.account-workspace{display:block;min-height:calc(100vh - 82px);background:linear-gradient(180deg,#f7f9fc 0%,#f5f7fa 100%)}
+.account-workspace.hidden{display:none}
+.account-workspace .workspace{width:min(1240px,100%);margin:0 auto;padding:34px 28px 70px}
+.account-workspace .workspace-head{padding:18px 22px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 8px 28px rgba(8,27,58,.045)}
+.workspace-title-block{display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+.back-home{border:0;background:transparent;color:var(--blue);font-weight:800;padding:0 0 7px;cursor:pointer;font-size:12px}
+.back-home:hover{text-decoration:underline}
+.account-workspace #viewContent{margin-top:20px}
+@media(max-width:640px){.account-workspace .workspace{padding:18px 12px 50px}.account-workspace .workspace-head{padding:16px;gap:12px}.account-workspace .workspace h2{font-size:24px}.sub-chip{width:100%;text-align:center}}
