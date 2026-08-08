@@ -229,3 +229,26 @@ La migration `migrations/0007_admin_modules.sql` ajoute les tables `app_settings
 - Messagerie séparée du support administratif.
 - Paramètres avec fermeture de toutes les sessions.
 - Le renouvellement d'un abonnement payant est permis durant ses 7 derniers jours.
+
+
+## V18 — Correction du chargement des pages
+
+- Le moteur de navigation attend désormais réellement chaque fonction `render...()`.
+- Une erreur API ou D1 ne laisse plus la page bloquée sur « Chargement des données… ».
+- En cas d'échec, l'interface affiche le message serveur, la référence Cloudflare éventuelle et des boutons **Réessayer** / **Retour à l'accueil**.
+- Les routes recruteur préparent explicitement les colonnes professionnelles avant leurs requêtes.
+- Nouvelle route de diagnostic authentifiée : `GET /api/recruiter/health`.
+
+
+## V19 — Demandeur professionnel et actions FREE
+
+- Les boutons d'accueil **Je cherche un emploi** et **Je recrute** utilisent désormais une délégation de clic fiable.
+- Visiteur non connecté :
+  - **Je postule** ouvre l'inscription Demandeur.
+  - **Je recrute** ouvre l'inscription Recruteur.
+- Compte FREE connecté :
+  - **Je postule** renvoie vers Abonnement pour un Demandeur.
+  - **Je recrute** renvoie vers Abonnement pour un Recruteur.
+- STANDARD/BUSINESS actif : les actions sont exécutées normalement.
+- Le Super Admin ne reçoit aucun message d'abonnement et ne possède pas de menu Abonnement.
+- Espace Demandeur enrichi : tableau de bord, recherche d'offres avancée, suivi des candidatures, aperçu du profil comme recruteur et notifications cliquables.

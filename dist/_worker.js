@@ -503,6 +503,24 @@ async function api(req,env,url){
       movement:{jobs30:Number(jobs30?.n||0),companies30:Number(recruiters30?.n||0),candidates30:Number(candidates30?.n||0)}
     });
   }
+  if(p==='/api/recruiter/health'&&m==='GET'){
+    const s=await requireSession(req,env);
+    if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
+    await ensureRecruiterSchema(env);
+    await ensureCandidateSchema(env);
+    await ensureRecruitmentSchema(env);
+    await ensureRecruiterProSchema(env);
+    await ensureAdminModuleSchema(env);
+    const checks={profile:false,jobs:false,applications:false,messages:false,notifications:false,subscriptions:false};
+    try{await env.JOB_DB.prepare('SELECT 1 FROM recruiter_profiles WHERE user_id=?').bind(s.user.id).first();checks.profile=true}catch{}
+    try{await env.JOB_DB.prepare('SELECT COUNT(*) n FROM jobs WHERE recruiter_id=?').bind(s.user.id).first();checks.jobs=true}catch{}
+    try{await env.JOB_DB.prepare('SELECT COUNT(*) n FROM applications a JOIN jobs j ON j.id=a.job_id WHERE j.recruiter_id=?').bind(s.user.id).first();checks.applications=true}catch{}
+    try{await env.JOB_DB.prepare('SELECT COUNT(*) n FROM conversation_members WHERE user_id=?').bind(s.user.id).first();checks.messages=true}catch{}
+    try{await env.JOB_DB.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id=?').bind(s.user.id).first();checks.notifications=true}catch{}
+    try{await env.JOB_DB.prepare('SELECT COUNT(*) n FROM subscriptions WHERE user_id=?').bind(s.user.id).first();checks.subscriptions=true}catch{}
+    const ok=Object.values(checks).every(Boolean);
+    return json({ok,service:'GLOBAL EMPLOI RECRUTEUR',checks});
+  }
   if(p==='/api/dashboard-metrics'&&m==='GET'){
     const s=await requireSession(req,env), uid=s.user.id, role=s.user.role;
     if(role==='candidate'){
@@ -575,6 +593,18 @@ async function api(req,env,url){
     const payer=safeText(b.payer_phone,40), tx=safeText(b.transaction_id,120); if(!payer||!tx) return json({error:'Téléphone et ID transaction obligatoires.'},400);
     await env.JOB_DB.prepare('INSERT INTO subscription_requests(user_id,plan,amount,payer_phone,transaction_id) VALUES(?,?,?,?,?)').bind(s.user.id,plan,amount,payer,tx).run(); await audit(env,s.user.id,'SUBSCRIPTION_REQUEST','subscription',null,{plan,amount}); return json({ok:true});
   }
+  if(p==='/api/profile/preview'&&m==='GET'){
+    const s=await requireSession(req,env);
+    if(s.user.role==='candidate'){
+      await ensureCandidateSchema(env);
+      const c=await env.JOB_DB.prepare(`SELECT u.id,p.* FROM users u JOIN candidate_profiles p ON p.user_id=u.id WHERE u.id=?`).bind(s.user.id).first();
+      const edu=await env.JOB_DB.prepare('SELECT diploma,specialty,institution,graduation_year FROM candidate_education WHERE user_id=? ORDER BY id DESC LIMIT 10').bind(s.user.id).all();
+      const exp=await env.JOB_DB.prepare('SELECT position,company,city_country,start_date,end_date,current_job,responsibilities FROM candidate_experiences WHERE user_id=? ORDER BY id DESC LIMIT 10').bind(s.user.id).all();
+      const langs=await env.JOB_DB.prepare('SELECT language,level FROM candidate_languages WHERE user_id=? ORDER BY id').bind(s.user.id).all();
+      return json({candidate:c,education:edu.results||[],experiences:exp.results||[],languages:langs.results||[]});
+    }
+    return json({error:'Aperçu disponible pour les demandeurs d’emploi.'},403);
+  }
   if(p==='/api/profile/completeness'&&m==='GET'){ const s=await requireSession(req,env); if(s.user.role!=='candidate') return json({percent:100,recommendations:[]}); return json(await candidateCompleteness(env,s.user.id)); }
   if(p==='/api/profile/documents'&&m==='POST'){ const s=await requireSession(req,env); if(s.user.role!=='candidate') return json({error:'Réservé aux demandeurs d’emploi.'},403); await ensureCandidateSchema(env); const fd=await req.formData(); const file=fd.get('file'); const type=safeText(fd.get('document_type'),40); if(!file||typeof file.arrayBuffer!=='function') return json({error:'Fichier requis.'},400); const allowed=['cv','motivation','diploma','work_certificate','identity']; if(!allowed.includes(type)) return json({error:'Type de document invalide.'},400); if(file.size>700*1024) return json({error:'Fichier trop volumineux. Maximum 700 Ko par document.'},413); const allowedMime=['application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','image/jpeg','image/png']; if(!allowedMime.includes(file.type)) return json({error:'Format non autorisé.'},400); const buf=await file.arrayBuffer(); await env.JOB_DB.prepare('INSERT INTO candidate_documents(user_id,document_type,file_name,mime_type,size_bytes,content) VALUES(?,?,?,?,?,?)').bind(s.user.id,type,safeText(file.name,180),file.type,file.size,buf).run(); return json({ok:true,completeness:await candidateCompleteness(env,s.user.id)},201); }
   if(p.startsWith('/api/profile/documents/')&&m==='DELETE'){ const s=await requireSession(req,env); const id=Number(p.split('/').pop()); await env.JOB_DB.prepare('DELETE FROM candidate_documents WHERE id=? AND user_id=?').bind(id,s.user.id).run(); return json({ok:true}); }
@@ -611,7 +641,7 @@ async function api(req,env,url){
   }
   if(p==='/api/recruiter/applications'&&m==='GET'){
     const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
-    await ensureCandidateSchema(env);
+    await ensureCandidateSchema(env); await ensureRecruiterProSchema(env);
     const rows=await env.JOB_DB.prepare(`SELECT a.id,a.status,a.message,a.created_at,j.id job_id,j.title,
       u.id candidate_id,u.email,u.phone,
       p.first_name,p.last_name,p.profession,p.professional_title,p.specialty,p.city,p.country,p.experience_level,p.experience_years,p.skills,p.description,p.availability,p.target_position,p.desired_contracts
@@ -625,6 +655,7 @@ async function api(req,env,url){
   }
   if(/^\/api\/jobs\/\d+$/.test(p)&&m==='GET'){
     const id=Number(p.split('/').pop());
+    await ensureRecruiterProSchema(env);
     const j=await env.JOB_DB.prepare(`SELECT j.*,r.company_name,r.trade_name,r.sector,r.main_domain,r.description company_description,r.company_city,r.company_country,r.logo
       FROM jobs j
       JOIN users u ON u.id=j.recruiter_id AND u.role='recruiter' AND u.status='active'
@@ -632,7 +663,6 @@ async function api(req,env,url){
       WHERE j.id=? AND j.status='published'
       AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=j.recruiter_id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now'))`).bind(id).first();
     if(!j) return json({error:'Offre introuvable ou non disponible.'},404);
-    await ensureRecruiterProSchema(env);
     await env.JOB_DB.prepare('UPDATE jobs SET view_count=COALESCE(view_count,0)+1 WHERE id=?').bind(id).run();
     return json({job:j});
   }
