@@ -1,3 +1,7 @@
+# GLOBAL EMPLOI V31
+
+Correction structurelle des délais de chargement des menus Admin, Demandeur et Recruteur. La navigation n'exécute plus aucune reconstruction/migration D1. Voir `DEPLOIEMENT_V31.md`.
+
 
 ## V30 — correction de finalisation de l’inscription
 - Le formulaire se ferme immédiatement après la réponse 201 de `/api/register`.

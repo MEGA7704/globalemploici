@@ -331,8 +331,10 @@ async function ensureAdminModuleSchema(env){
   return true;
 }
 async function ensureAdminDataReady(env){
-  await ensureRuntimeSchema(env);
-  return ensureDataLinkage(env);
+  // V31 : une page Admin ne doit jamais lancer une migration globale ni un audit de toute la base.
+  // Les routes Admin lisent directement leurs tables métiers. Les diagnostics globaux restent
+  // disponibles uniquement via /api/health et /api/data-linkage.
+  return true;
 }
 async function getAppSettings(env){
   await ensureAdminModuleSchema(env);
@@ -614,7 +616,7 @@ async function api(req,env,url){
     const ph=await createPassword(neu); await env.JOB_DB.prepare('UPDATE users SET password_hash=?,password_salt=?,session_version=session_version+1,updated_at=? WHERE id=?').bind(ph.hash,ph.salt,nowISO(),s.user.id).run(); await env.JOB_KV.delete(`sess:${s.token}`); await audit(env,s.user.id,'PASSWORD_CHANGED','user',s.user.id); return json({ok:true},200,{'set-cookie':clearCookie()});
   }
   if((p==='/api/profile'||p==='/api/load')&&m==='GET'){
-    const s=await requireSession(req,env); await ensureDataLinkage(env); const table=s.user.role==='recruiter'?'recruiter_profiles':'candidate_profiles'; if(s.user.role==='candidate') await ensureCandidateSchema(env); if(s.user.role==='recruiter') await ensureRecruiterSchema(env); const row=await env.JOB_DB.prepare(`SELECT * FROM ${table} WHERE user_id=?`).bind(s.user.id).first(); if(s.user.role==='candidate'){ const education=await env.JOB_DB.prepare('SELECT * FROM candidate_education WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const experiences=await env.JOB_DB.prepare('SELECT * FROM candidate_experiences WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const languages=await env.JOB_DB.prepare('SELECT * FROM candidate_languages WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const documents=await env.JOB_DB.prepare('SELECT id,document_type,file_name,mime_type,size_bytes,created_at FROM candidate_documents WHERE user_id=? ORDER BY id DESC').bind(s.user.id).all(); return json({profile:row,education:education.results||[],experiences:experiences.results||[],languages:languages.results||[],documents:documents.results||[],completeness:await candidateCompleteness(env,s.user.id),subscription:await currentSubscription(env,s.user.id)}); } if(s.user.role==='recruiter'){ const documents=await env.JOB_DB.prepare('SELECT id,document_type,file_name,mime_type,size_bytes,created_at FROM recruiter_documents WHERE user_id=? ORDER BY id DESC').bind(s.user.id).all(); return json({profile:row,documents:documents.results||[],completeness:await recruiterCompleteness(env,s.user.id),subscription:await currentSubscription(env,s.user.id)}); } return json({profile:row,subscription:await currentSubscription(env,s.user.id)});
+    const s=await requireSession(req,env); const table=s.user.role==='recruiter'?'recruiter_profiles':'candidate_profiles'; if(s.user.role==='candidate') await ensureCandidateSchema(env); if(s.user.role==='recruiter') await ensureRecruiterSchema(env); const row=await env.JOB_DB.prepare(`SELECT * FROM ${table} WHERE user_id=?`).bind(s.user.id).first(); if(s.user.role==='candidate'){ const education=await env.JOB_DB.prepare('SELECT * FROM candidate_education WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const experiences=await env.JOB_DB.prepare('SELECT * FROM candidate_experiences WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const languages=await env.JOB_DB.prepare('SELECT * FROM candidate_languages WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const documents=await env.JOB_DB.prepare('SELECT id,document_type,file_name,mime_type,size_bytes,created_at FROM candidate_documents WHERE user_id=? ORDER BY id DESC').bind(s.user.id).all(); return json({profile:row,education:education.results||[],experiences:experiences.results||[],languages:languages.results||[],documents:documents.results||[],completeness:await candidateCompleteness(env,s.user.id),subscription:await currentSubscription(env,s.user.id)}); } if(s.user.role==='recruiter'){ const documents=await env.JOB_DB.prepare('SELECT id,document_type,file_name,mime_type,size_bytes,created_at FROM recruiter_documents WHERE user_id=? ORDER BY id DESC').bind(s.user.id).all(); return json({profile:row,documents:documents.results||[],completeness:await recruiterCompleteness(env,s.user.id),subscription:await currentSubscription(env,s.user.id)}); } return json({profile:row,subscription:await currentSubscription(env,s.user.id)});
   }
   if((p==='/api/profile'||p==='/api/save')&&m==='POST'){
     const s=await requireSession(req,env), b=await req.json().catch(()=>({}));
@@ -1296,9 +1298,10 @@ export default {
       }
 
       if(url.pathname.startsWith('/api/')){
-        // V30 : aucune migration lourde dans le chemin critique d'inscription/connexion/session.
-        // Le schéma est déployé explicitement par migration. Les API doivent répondre rapidement.
-        if(!['/api/register','/api/login','/api/session','/api/logout'].includes(url.pathname)) await ensureRuntimeSchema(env);
+        // V31 : AUCUNE migration, archive, import legacy ou réparation globale dans le chemin
+        // d'une requête métier. C'était la cause des délais de 20 s sur tous les menus.
+        // Les routes consultent directement D1. Les contrôles globaux ne sont exécutés que
+        // lorsqu'on appelle volontairement /api/health ou /api/data-linkage.
         const response=await api(request,env,url);
         const h=new Headers(response.headers);
         h.set('cache-control','no-store');
