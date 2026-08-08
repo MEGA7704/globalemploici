@@ -6,7 +6,21 @@ function modal(html){$('#modalBody').innerHTML=html;$('#modal').classList.remove
 function closeModal(){$('#modal').classList.add('hidden')}
 $('#closeModal').onclick=closeModal;$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
 
-function loginModal(){modal(`<h2>Connexion</h2><p class="muted">Accédez à votre espace GLOBAL EMPLOI.</p><form id="loginForm" class="form-grid"><div class="field full"><label>E-mail</label><input name="email" type="email" required></div><div class="field full"><label>Mot de passe</label><input name="password" type="password" required></div><div class="full"><button class="btn primary">Se connecter</button></div></form>`);$('#loginForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);try{await api('/api/login',{method:'POST',body:JSON.stringify(Object.fromEntries(f))});closeModal();await boot();toast('Connexion réussie');}catch(err){toast(err.message)}}}
+function bindPasswordToggles(root=document){
+  root.querySelectorAll('[data-toggle-password]').forEach(btn=>{
+    if(btn.dataset.bound==='1') return;
+    btn.dataset.bound='1';
+    btn.addEventListener('click',()=>{
+      const input=document.getElementById(btn.dataset.togglePassword);
+      if(!input) return;
+      const show=input.type==='password';
+      input.type=show?'text':'password';
+      btn.textContent=show?'◉̸':'◉';
+      btn.setAttribute('aria-label',show?'Masquer le mot de passe':'Afficher le mot de passe');
+    });
+  });
+}
+function loginModal(){modal(`<h2>Connexion</h2><p class="muted">Accédez à votre espace GLOBAL EMPLOI.</p><form id="loginForm" class="form-grid"><div class="field full"><label>E-mail</label><input name="email" type="email" required></div><div class="field full"><label>Mot de passe</label><div class="password-wrap"><input id="loginPassword" name="password" type="password" required><button class="password-toggle" type="button" data-toggle-password="loginPassword" aria-label="Afficher le mot de passe">◉</button></div></div><div class="full"><button class="btn primary">Se connecter</button></div></form>`);bindPasswordToggles();$('#loginForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);try{await api('/api/login',{method:'POST',body:JSON.stringify(Object.fromEntries(f))});closeModal();await boot();toast('Connexion réussie');}catch(err){toast(err.message)}}}
 function registerModal(role='candidate'){
   const candidate=role==='candidate';
   modal(`<h2>${candidate?'Inscription — Demandeur d’emploi':'Inscription — Recruteur'}</h2>
@@ -95,7 +109,7 @@ function accountItems(role){
     ['dashboard','⌂','Tableau de bord'],['profile','▣','Profil entreprise'],['jobs','＋','Publier une offre'],['myjobs','▤','Mes offres'],['applications','✓','Candidatures reçues'],['candidates','♙','Recherche de candidats'],['favorites','☆','Favoris'],['messages','✉','Messages'],['subscription','◈','Abonnement'],['payments','¤','Paiements'],['settings','⚙','Paramètres']
   ];
   if(role==='candidate')return [
-    ['dashboard','⌂','Tableau de bord'],['profile','♙','Mon profil'],['jobs','▣','Offres d’emploi'],['candidates','♧','Profils professionnels'],['messages','✉','Messages'],['subscription','◈','Abonnement'],['settings','⚙','Paramètres']
+    ['dashboard','⌂','Tableau de bord'],['profile','♙','Mon profil'],['jobs','▣','Offres d’emploi'],['recruitment','★','Propositions reçues'],['candidates','♧','Profils professionnels'],['messages','✉','Messages'],['subscription','◈','Abonnement'],['settings','⚙','Paramètres']
   ];
   return [['dashboard','⌂','Tableau de bord'],['admin','◆','Administration'],['messages','✉','Messages'],['settings','⚙','Paramètres']];
 }
@@ -127,7 +141,7 @@ function showGuest(){state.view='home';$('#guestHome').classList.remove('hidden'
 function showConnectedHome(){const u=state.session.user;state.view='home';$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');$('#loginBtn').classList.add('hidden');$('#registerBtn').classList.add('hidden');$('#accountControl').classList.remove('hidden');buildAccountMenu();updateSubChip();syncViewNavigation('home')}
 function updateSubChip(){const s=state.session.subscription;if(!s){$('#subscriptionChip').textContent='Aucun abonnement';return}const d=new Date(s.expires_at).toLocaleDateString('fr-FR');$('#subscriptionChip').textContent=`${s.plan.toUpperCase()} • jusqu'au ${d}`}
 $('#backHomeBtn')?.addEventListener('click',()=>showPublicHome('home'));
-async function render(view){state.view=view;syncViewNavigation(view);const c=$('#viewContent'),t=$('#viewTitle');const names={dashboard:'Tableau de bord',profile:state.session?.user?.role==='recruiter'?'Profil entreprise':'Mon profil',jobs:"Publier une offre / Offres d'emploi",myjobs:'Mes offres',applications:'Candidatures reçues',candidates:'Recherche de candidats',favorites:'Favoris',messages:'Messages',subscription:'Abonnement',payments:'Paiements',settings:'Paramètres',admin:'Administration'};t.textContent=names[view]||view;c.innerHTML='<div class="panel">Chargement…</div>';try{if(view==='dashboard')return renderDashboard();if(view==='profile')return renderProfile();if(view==='jobs')return renderJobs();if(view==='myjobs')return renderMyJobs();if(view==='applications')return renderRecruiterApplications();if(view==='candidates')return renderCandidates();if(view==='favorites')return renderFavorites();if(view==='messages')return renderMessages();if(view==='subscription'||view==='payments')return renderSubscription();if(view==='settings')return renderSettings();if(view==='admin')return renderAdmin();}catch(e){c.innerHTML=`<div class="panel"><b>Erreur :</b> ${esc(e.message)}</div>`}}
+async function render(view){state.view=view;syncViewNavigation(view);const c=$('#viewContent'),t=$('#viewTitle');const names={dashboard:'Tableau de bord',profile:state.session?.user?.role==='recruiter'?'Profil entreprise':'Mon profil',jobs:"Publier une offre / Offres d'emploi",myjobs:'Mes offres',applications:'Candidatures reçues',recruitment:'Propositions reçues',candidates:'Recherche de candidats',favorites:'Favoris',messages:'Messages',subscription:'Abonnement',payments:'Paiements',settings:'Paramètres',admin:'Administration'};t.textContent=names[view]||view;c.innerHTML='<div class="panel">Chargement…</div>';try{if(view==='dashboard')return renderDashboard();if(view==='profile')return renderProfile();if(view==='jobs')return renderJobs();if(view==='myjobs')return renderMyJobs();if(view==='applications')return renderRecruiterApplications();if(view==='recruitment')return renderRecruitmentRequests();if(view==='candidates')return renderCandidates();if(view==='favorites')return renderFavorites();if(view==='messages')return renderMessages();if(view==='subscription'||view==='payments')return renderSubscription();if(view==='settings')return renderSettings();if(view==='admin')return renderAdmin();}catch(e){c.innerHTML=`<div class="panel"><b>Erreur :</b> ${esc(e.message)}</div>`}}
 
 async function renderDashboard(){const u=state.session.user,s=state.session.subscription;if(u.role==='candidate'){let c={percent:0,recommendations:[]};try{c=await api('/api/profile/completeness')}catch{}$('#viewContent').innerHTML=`<div class="profile-progress-card"><div><span class="section-kicker">VOTRE PROFIL</span><h3>Profil complété à ${c.percent}%</h3><p class="muted">Un profil complet améliore votre présentation auprès des recruteurs.</p></div><div class="progress-ring"><strong>${c.percent}%</strong></div><div class="progress-track"><span style="width:${c.percent}%"></span></div>${c.recommendations.length?`<div class="recommendations">${c.recommendations.slice(0,4).map(x=>`<button class="recommendation go-profile">+ ${esc(x)}</button>`).join('')}</div>`:''}</div><div class="grid"><div class="card metric"><span>Type de compte</span><strong>Demandeur</strong></div><div class="card metric"><span>Formule</span><strong>${s?.plan?.toUpperCase()||'—'}</strong></div><div class="card metric"><span>Statut</span><strong>${s?.effective_status==='active'?'Actif':'Expiré'}</strong></div><div class="card metric"><span>Profil</span><strong>${c.percent}%</strong></div></div>`;$$('.go-profile').forEach(b=>b.onclick=()=>render('profile'));return}if(u.role==='recruiter'){let d={completeness:{percent:0,recommendations:[],verification_status:'unverified'}};try{d=await api('/api/profile')}catch{}const c=d.completeness||{percent:0,recommendations:[],verification_status:'unverified'};const vs=c.verification_status==='verified'?'Entreprise vérifiée ✓':c.verification_status==='pending'?'Vérification en cours':'Compte non vérifié';$('#viewContent').innerHTML=`<div class="verification-card ${c.verification_status||'unverified'}"><div><span class="section-kicker">ESPACE RECRUTEUR</span><h3>${vs}</h3><p>Profil entreprise complété à ${c.percent}%.</p></div><button class="btn ghost go-profile">Compléter le profil</button></div><div class="grid"><div class="card metric"><span>Type de compte</span><strong>Recruteur</strong></div><div class="card metric"><span>Formule</span><strong>${s?.plan?.toUpperCase()||'—'}</strong></div><div class="card metric"><span>Vérification</span><strong>${c.verification_status==='verified'?'✓':'…'}</strong></div><div class="card metric"><span>Profil</span><strong>${c.percent}%</strong></div></div>`;$('.go-profile')?.addEventListener('click',()=>render('profile'));return}$('#viewContent').innerHTML=`<div class="grid"><div class="card metric"><span>Type de compte</span><strong>Super Admin</strong></div><div class="card metric"><span>Administration</span><strong>✓</strong></div></div>`}
 
@@ -248,16 +262,36 @@ function bindRecruiterDocumentUploads(){
   $$('[data-recruiter-doc-delete]').forEach(b=>b.onclick=async()=>{try{await api('/api/recruiter/documents/'+b.dataset.recruiterDocDelete,{method:'DELETE'});toast('Document supprimé.');renderProfile()}catch(e){toast(e.message)}})
 }
 async function renderMyJobs(){if(state.session.user.role!=='recruiter')return renderJobs();const d=await api('/api/recruiter/jobs');$('#viewContent').innerHTML=`<div class="panel"><div class="section-head"><div><h3>Mes offres</h3><p class="muted">${d.jobs.length} offre(s) enregistrée(s).</p></div><button class="btn primary" id="newJobFromMine">Publier une offre</button></div><div class="cards">${d.jobs.map(j=>`<article class="job"><span class="pill">${esc(j.status||'published')}</span><h4>${esc(j.title)}</h4><p>${esc(j.location||'Lieu non précisé')} • ${esc(j.employment_type||'')}</p><small>${new Date(j.created_at).toLocaleDateString('fr-FR')}</small></article>`).join('')||'<p class="muted">Aucune offre publiée.</p>'}</div></div>`;$('#newJobFromMine')?.addEventListener('click',()=>render('jobs'))}
-async function renderRecruiterApplications(){if(state.session.user.role!=='recruiter')return $('#viewContent').innerHTML='<div class="panel">Section réservée aux recruteurs.</div>';const d=await api('/api/recruiter/applications');$('#viewContent').innerHTML=`<div class="panel"><h3>Candidatures reçues</h3><div class="table-wrap"><table class="table"><thead><tr><th>Candidat</th><th>Offre</th><th>Contact</th><th>Statut</th></tr></thead><tbody>${d.applications.map(a=>`<tr><td>${esc(((a.first_name||'')+' '+(a.last_name||'')).trim()||a.email)}<br><small>${esc(a.profession||'')}</small></td><td>${esc(a.title)}</td><td>${esc(a.phone||a.email)}</td><td>${esc(a.status)}</td></tr>`).join('')||'<tr><td colspan="4">Aucune candidature reçue.</td></tr>'}</tbody></table></div></div>`}
-function renderFavorites(){$('#viewContent').innerHTML='<div class="panel"><h3>Favoris</h3><p class="muted">Les profils enregistrés comme favoris apparaîtront ici dans une prochaine évolution. La recherche de candidats et la messagerie restent disponibles.</p><button class="btn primary" id="goCandidates">Rechercher des candidats</button></div>';$('#goCandidates')?.addEventListener('click',()=>render('candidates'))}
-function renderSettings(){$('#viewContent').innerHTML=`<div class="panel"><h3>Paramètres & sécurité</h3><form id="passwordForm" class="form-grid"><div class="field"><label>Mot de passe actuel</label><input name="old_password" type="password" required></div><div class="field"><label>Nouveau mot de passe</label><input name="new_password" type="password" minlength="8" required></div><div class="full"><button class="btn primary">Changer le mot de passe</button></div></form></div>`;$('#passwordForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/change-password',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Mot de passe modifié. Reconnectez-vous.');setTimeout(()=>location.reload(),900)}catch(err){toast(err.message)}}}
-async function renderJobs(){const d=await api('/api/jobs');const recruiter=state.session.user.role==='recruiter';$('#viewContent').innerHTML=`${recruiter?`<div class="panel"><h3>Publier une offre</h3><form id="jobForm" class="form-grid"><div class="field"><label>Titre du poste</label><input name="title" required></div><div class="field"><label>Profession</label><input name="profession"></div><div class="field"><label>Type</label><select name="employment_type"><option>Temps plein</option><option>Temps partiel</option><option>Contrat</option><option>Mission</option><option>Stage</option></select></div><div class="field"><label>Lieu</label><input name="location"></div><div class="field full"><label>Description</label><textarea name="description" required></textarea></div><div class="full"><button class="btn primary">Publier</button></div></form></div>`:''}<div class="cards">${d.jobs.length?d.jobs.map(j=>`<article class="job"><span class="pill">${esc(j.employment_type||'Offre')}</span><h4>${esc(j.title)}</h4><p>${esc(j.company_name||'Recruteur')} • ${esc(j.location||'Lieu non précisé')}</p><p>${esc((j.description||'').slice(0,180))}</p>${state.session.user.role==='candidate'?`<button class="btn primary apply" data-id="${j.id}">Postuler</button>`:''}</article>`).join(''):'<div class="panel">Aucune offre pour le moment.</div>'}</div>`;if(recruiter)$('#jobForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/jobs',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Offre publiée');renderJobs()}catch(err){toast(err.message)}};$$('.apply').forEach(b=>b.onclick=async()=>{try{await api(`/api/jobs/${b.dataset.id}/apply`,{method:'POST',body:'{}'});toast('Candidature envoyée')}catch(err){toast(err.message)}})}
+async function renderRecruiterApplications(){
+  if(state.session.user.role!=='recruiter')return $('#viewContent').innerHTML='<div class="panel">Section réservée aux recruteurs.</div>';
+  const d=await api('/api/recruiter/applications');
+  $('#viewContent').innerHTML=`<div class="panel"><div class="section-head"><div><span class="section-kicker">LISTE SPÉCIALE</span><h3>Postulants à mes offres</h3><p>${d.applications.length} candidature${d.applications.length>1?'s':''} reçue${d.applications.length>1?'s':''}.</p></div></div>
+  <div class="application-cards">${d.applications.map(a=>`<article class="application-card">
+    <div><span class="pill">${esc(a.status||'submitted')}</span><h4>${esc(((a.first_name||'')+' '+(a.last_name||'')).trim()||a.email)}</h4><p><b>${esc(a.professional_title||a.profession||'Candidat')}</b> • ${esc(a.city||a.country||'')}</p></div>
+    <div class="application-info"><span><small>Offre</small>${esc(a.title)}</span><span><small>Téléphone</small>${esc(a.phone||'—')}</span><span><small>E-mail</small>${esc(a.email||'—')}</span><span><small>Expérience</small>${esc(a.experience_level||a.experience_years||'—')}</span></div>
+    <p>${esc((a.skills||a.description||'').slice(0,220))}</p>
+    ${a.message?`<div class="application-message"><b>Message du candidat :</b> ${esc(a.message)}</div>`:''}
+    <div class="application-actions"><button class="btn outline-blue applicant-detail" data-id="${a.id}">Voir les informations</button><button class="btn primary message-user" data-id="${a.candidate_id}">Envoyer un message</button></div>
+  </article>`).join('')||'<div class="empty-state">Aucune candidature reçue pour le moment.</div>'}</div></div>`;
+  const byId=new Map(d.applications.map(a=>[String(a.id),a]));
+  $$('.applicant-detail').forEach(b=>b.onclick=()=>{const a=byId.get(b.dataset.id);modal(`<h2>${esc(((a.first_name||'')+' '+(a.last_name||'')).trim()||a.email)}</h2><div class="detail-grid"><div><small>Poste / profil</small><strong>${esc(a.professional_title||a.profession||'—')}</strong></div><div><small>Ville</small><strong>${esc(a.city||a.country||'—')}</strong></div><div><small>Téléphone</small><strong>${esc(a.phone||'—')}</strong></div><div><small>E-mail</small><strong>${esc(a.email||'—')}</strong></div><div><small>Expérience</small><strong>${esc(a.experience_level||a.experience_years||'—')}</strong></div><div><small>Disponibilité</small><strong>${esc(a.availability||'—')}</strong></div></div><div class="detail-section"><h3>Compétences</h3><p>${esc(a.skills||'—')}</p></div><div class="detail-section"><h3>Poste recherché</h3><p>${esc(a.target_position||'—')} • ${esc(a.desired_contracts||'')}</p></div><div class="detail-actions"><button class="btn primary modal-message" data-id="${a.candidate_id}">Envoyer un message</button></div>`);$('.modal-message')?.addEventListener('click',()=>{closeModal();messageModal(Number(a.candidate_id))})});
+  $$('.message-user').forEach(b=>b.onclick=()=>messageModal(Number(b.dataset.id)));
+}
+
+async function renderRecruitmentRequests(){
+  if(state.session.user.role!=='candidate')return $('#viewContent').innerHTML='<div class="panel">Section réservée aux demandeurs d’emploi.</div>';
+  const d=await api('/api/candidate/recruitment-requests');
+  $('#viewContent').innerHTML=`<div class="panel"><h3>Propositions de recrutement reçues</h3><p class="muted">Les recruteurs qui cliquent sur « Je recrute » apparaissent ici.</p>
+    <div class="application-cards">${d.requests.map(r=>`<article class="application-card"><div><span class="pill">${esc(r.status||'sent')}</span><h4>${esc(r.company_name||r.trade_name||'Recruteur GLOBAL EMPLOI')}</h4><p>${esc(r.job_title||r.email||'Recruteur')}</p></div>${r.message?`<div class="application-message">${esc(r.message)}</div>`:''}<div class="application-actions"><button class="btn primary message-user" data-id="${r.recruiter_id}">Répondre par message</button></div></article>`).join('')||'<div class="empty-state">Aucune proposition reçue pour le moment.</div>'}</div>
+  </div>`;
+  $$('.message-user').forEach(b=>b.onclick=()=>messageModal(Number(b.dataset.id)));
+}
 
 async function renderCandidates(){const d=await api('/api/candidates');$('#viewContent').innerHTML=`<div class="cards">${d.candidates.length?d.candidates.map(p=>`<article class="person"><span class="pill">${esc(p.availability||'Profil')}</span><h4>${esc(`${p.first_name||''} ${p.last_name||''}`.trim()||'Professionnel')}</h4><p><b>${esc(p.profession||'Métier non précisé')}</b><br>${esc(p.specialty||'')} ${p.city?'• '+esc(p.city):''}</p><p>${esc((p.skills||'').slice(0,150))}</p>${state.session.user.role==='recruiter'?`<button class="btn primary message-user" data-id="${p.id}">Message</button>`:''}</article>`).join(''):'<div class="panel">Aucun profil disponible.</div>'}</div>`;$$('.message-user').forEach(b=>b.onclick=()=>messageModal(Number(b.dataset.id)))}
 function messageModal(receiver){modal(`<h2>Envoyer un message</h2><form id="messageForm"><div class="field"><label>Message</label><textarea name="content" required></textarea></div><br><button class="btn primary">Envoyer</button></form>`);$('#messageForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/messages',{method:'POST',body:JSON.stringify({receiver_id:receiver,content:new FormData(e.target).get('content')})});closeModal();toast('Message envoyé')}catch(err){toast(err.message)}}}
 async function renderMessages(){const d=await api('/api/conversations');$('#viewContent').innerHTML=`<div class="panel"><h3>Conversations</h3>${d.conversations.length?d.conversations.map(x=>`<div class="card" style="margin:10px 0"><b>Conversation #${x.id}</b><p class="muted">${esc(x.last_message||'Aucun message')}</p><button class="btn ghost open-conv" data-id="${x.id}">Ouvrir</button></div>`).join(''):'<p class="muted">Aucune conversation.</p>'}</div>`;$$('.open-conv').forEach(b=>b.onclick=async()=>{const m=await api(`/api/messages?conversation_id=${b.dataset.id}`);modal(`<h2>Conversation #${b.dataset.id}</h2><div>${m.messages.map(x=>`<div class="card" style="margin:8px 0"><small>${x.sender_id===state.session.user.id?'Moi':'Correspondant'} • ${new Date(x.created_at).toLocaleString('fr-FR')}</small><p>${esc(x.content)}</p></div>`).join('')}</div>`)});}
 
-function renderSubscription(){const s=state.session.subscription;$('#viewContent').innerHTML=`<div class="plans"><div class="plan"><h3>FREE</h3><div class="price">0 F</div><p>${state.session.user.role==='candidate'?'7 jours':'24 heures'}</p></div><div class="plan featured"><h3>STANDARD</h3><div class="price">1 000 F</div><p>30 jours</p><a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=1000" target="_blank" rel="noopener">Payer avec Wave</a></div><div class="plan"><h3>BUSINESS</h3><div class="price">10 000 F</div><p>365 jours</p><a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=10000" target="_blank" rel="noopener">Payer avec Wave</a></div></div><div class="panel" style="margin-top:18px"><h3>Mon abonnement actuel</h3><p><b>${s?.plan?.toUpperCase()||'Aucun'}</b> • expiration : ${s?new Date(s.expires_at).toLocaleString('fr-FR'):'—'}</p><button id="activateBtn" class="btn primary">Activer mon abonnement</button></div>`;$('#activateBtn').onclick=activationModal}
+function renderSubscription(){const s=state.session.subscription;$('#viewContent').innerHTML=`<div class="plans"><div class="plan"><h3>FREE</h3><div class="price">0 F</div><p>7 jours</p><small class="free-warning">Consultation uniquement : impossible de postuler ou recruter. Sans activation STANDARD/BUSINESS avant la fin des 7 jours, le compte FREE est automatiquement supprimé.</small></div><div class="plan featured"><h3>STANDARD</h3><div class="price">1 000 F</div><p>30 jours</p><a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=1000" target="_blank" rel="noopener">Payer avec Wave</a></div><div class="plan"><h3>BUSINESS</h3><div class="price">10 000 F</div><p>365 jours</p><a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=10000" target="_blank" rel="noopener">Payer avec Wave</a></div></div><div class="panel" style="margin-top:18px"><h3>Mon abonnement actuel</h3><p><b>${s?.plan?.toUpperCase()||'Aucun'}</b> • expiration : ${s?new Date(s.expires_at).toLocaleString('fr-FR'):'—'}</p><button id="activateBtn" class="btn primary">Activer mon abonnement</button></div>`;$('#activateBtn').onclick=activationModal}
 function activationModal(){modal(`<h2>Activer mon abonnement</h2><form id="activationForm" class="form-grid"><div class="field full"><label>Version achetée</label><select name="plan"><option value="standard">STANDARD — 1 000 FCFA</option><option value="business">BUSINESS — 10 000 FCFA</option></select></div><div class="field"><label>N° téléphone ayant payé</label><input name="payer_phone" required></div><div class="field"><label>ID de transaction</label><input name="transaction_id" required></div><div class="full" style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" id="waSend" class="btn ghost">Envoyer par WhatsApp</button><button class="btn primary">Envoyer au Support</button></div></form>`);$('#waSend').onclick=()=>{const f=new FormData($('#activationForm')),plan=f.get('plan'),amount=plan==='business'?10000:1000;const txt=`Demande d'activation GLOBAL EMPLOI\nCompte : ${state.session.user.email}\nType : ${state.session.user.role}\nFormule : ${plan}\nMontant : ${amount} FCFA\nTéléphone paiement : ${f.get('payer_phone')||''}\nID transaction : ${f.get('transaction_id')||''}`;window.open(`https://wa.me/2250777041790?text=${encodeURIComponent(txt)}`,'_blank')};$('#activationForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/subscription-request',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});closeModal();toast('Demande envoyée au support')}catch(err){toast(err.message)}}}
 
 async function renderAdmin(){
@@ -275,29 +309,205 @@ async function renderAdmin(){
     </tbody></table></div>
   </div>
   <div class="panel"><h3>Demandes d'activation</h3><div class="table-wrap"><table class="table"><thead><tr><th>Client</th><th>Formule</th><th>Montant</th><th>Paiement</th><th>Actions</th></tr></thead><tbody>${r.requests.map(x=>`<tr><td>${esc(x.email)}<br><small>${esc(x.role)}</small></td><td>${esc(x.plan)}</td><td>${x.amount} F</td><td>${esc(x.payer_phone)}<br><small>${esc(x.transaction_id)}</small></td><td><button class="btn primary approve" data-id="${x.id}">Activer</button> <button class="btn danger reject" data-id="${x.id}">Paiement non trouvé</button></td></tr>`).join('')||'<tr><td colspan="5">Aucune demande en attente.</td></tr>'}</tbody></table></div></div>
-  <div class="panel"><h3>Utilisateurs</h3><div class="table-wrap"><table class="table"><thead><tr><th>E-mail</th><th>Rôle</th><th>Statut</th><th>Formule</th><th>Expiration</th></tr></thead><tbody>${u.users.map(x=>`<tr><td>${esc(x.email)}</td><td>${esc(x.role)}</td><td>${esc(x.status)}</td><td>${esc(x.plan||'—')}</td><td>${x.expires_at?new Date(x.expires_at).toLocaleDateString('fr-FR'):'—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+  <div class="panel"><h3>Utilisateurs</h3><div class="table-wrap"><table class="table"><thead><tr><th>E-mail</th><th>Rôle</th><th>Statut</th><th>Formule</th><th>Expiration</th><th>Action</th></tr></thead><tbody>${u.users.map(x=>`<tr><td>${esc(x.email)}</td><td>${esc(x.role)}</td><td>${esc(x.status)}</td><td>${esc(x.plan||'—')}</td><td>${x.expires_at?new Date(x.expires_at).toLocaleDateString('fr-FR'):'—'}</td><td>${x.role==='super_admin'?'—':`<button class="btn danger admin-delete-user" data-id="${x.id}" data-email="${esc(x.email)}">Supprimer</button>`}</td></tr>`).join('')}</tbody></table></div></div>`;
   $$('.approve').forEach(b=>b.onclick=()=>adminAction(b.dataset.id,'approve'));
   $$('.reject').forEach(b=>b.onclick=()=>adminAction(b.dataset.id,'reject'));
   $$('.recruiter-verify').forEach(b=>b.onclick=()=>recruiterVerificationAction(b.dataset.id,'verify'));
-  $$('.recruiter-reject').forEach(b=>b.onclick=()=>recruiterVerificationAction(b.dataset.id,'reject'));
+  $$('.recruiter-reject').forEach(b=>b.onclick=()=>recruiterVerificationAction(b.dataset.id,'reject'));$$('.admin-delete-user').forEach(b=>b.onclick=()=>adminDeleteUser(b.dataset.id,b.dataset.email));
 }
 async function recruiterVerificationAction(id,action){
   try{await api(`/api/admin/recruiters/${id}/${action}`,{method:'POST',body:JSON.stringify({note:action==='reject'?'Veuillez compléter ou corriger les informations de vérification.':''})});toast(action==='verify'?'Entreprise vérifiée avec succès.':'Demande renvoyée au recruteur.');renderAdmin()}catch(err){toast(err.message)}
 }
 
+async function adminDeleteUser(id,email){
+  if(!confirm(`Supprimer définitivement le compte ${email} et toutes ses publications liées ?`))return;
+  try{await api(`/api/admin/users/${id}`,{method:'DELETE'});toast('Compte et publications supprimés.');renderAdmin()}catch(err){toast(err.message)}
+}
+
 async function adminAction(id,action){try{await api(`/api/admin/subscription-requests/${id}/${action}`,{method:'POST',body:'{}'});toast(action==='approve'?'Abonnement activé':'Demande rejetée');renderAdmin()}catch(err){toast(err.message)}}
 
-function scheduleFreePopup(){clearInterval(state.freeTimer);const s=state.session.subscription;if(!s||s.plan!=='free'||s.effective_status!=='active')return;state.freeTimer=setInterval(()=>{if(!$('#modal').classList.contains('hidden'))return;modal(`<h2>Passez à une formule supérieure</h2><p class="muted">Profitez plus longtemps de GLOBAL EMPLOI.</p><div class="plans" style="grid-template-columns:1fr 1fr"><div class="plan featured"><h3>STANDARD</h3><div class="price">1 000 F</div><p>30 jours</p><a class="btn primary" target="_blank" rel="noopener" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=1000">Choisir STANDARD</a></div><div class="plan"><h3>BUSINESS</h3><div class="price">10 000 F</div><p>365 jours</p><a class="btn primary" target="_blank" rel="noopener" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=10000">Choisir BUSINESS</a></div></div><br><button class="btn ghost" onclick="document.querySelector('#modal').classList.add('hidden')">Plus tard</button>`);},300000)}
-function esc(v=''){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
-// La navigation publique reste disponible même après connexion.
-$$('a[href^="#"]').forEach(a=>a.addEventListener('click',e=>{
-  const id=(a.getAttribute('href')||'').slice(1);
-  if(!id)return;
-  if(state.session && !$('#app').classList.contains('hidden')){e.preventDefault();showPublicHome(id)}
-}));
+function scheduleFreePopup(){
+  clearInterval(state.freeTimer);
+  const s=state.session.subscription;
+  if(!s||s.plan!=='free'||s.effective_status!=='active')return;
+  state.freeTimer=setInterval(()=>{
+    if(!$('#modal').classList.contains('hidden'))return;
+    modal(`<h2>Votre accès FREE est limité à 7 jours</h2>
+      <p class="muted">Vous pouvez consulter toutes les pages, les offres visibles et les profils publiés, mais vous ne pouvez pas encore utiliser « Je postule » ou « Je recrute ».</p>
+      <div class="free-expiry-alert"><b>Important :</b> si votre abonnement STANDARD ou BUSINESS n’est pas activé avant la fin de vos 7 jours FREE, votre compte et ses publications seront automatiquement supprimés. Après l’expiration d’un abonnement payant, votre compte repasse également en FREE pendant 7 jours : il est masqué jusqu’au renouvellement et sera supprimé si aucun nouvel abonnement payant n’est activé avant la fin de ce délai.</div>
+      <div class="plans" style="grid-template-columns:1fr 1fr">
+        <div class="plan featured"><h3>STANDARD</h3><div class="price">1 000 F</div><p>30 jours</p><a class="btn primary" target="_blank" rel="noopener" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=1000">Choisir STANDARD</a></div>
+        <div class="plan"><h3>BUSINESS</h3><div class="price">10 000 F</div><p>365 jours</p><a class="btn primary" target="_blank" rel="noopener" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=10000">Choisir BUSINESS</a></div>
+      </div><br><button class="btn ghost" onclick="document.querySelector('#modal').classList.add('hidden')">Plus tard</button>`);
+  },300000)
+}
 
 const mobileMenuBtn=$('#mobileMenuBtn');
 if(mobileMenuBtn){mobileMenuBtn.onclick=()=>{const nav=$('#publicNav');const open=nav.classList.toggle('open');mobileMenuBtn.setAttribute('aria-expanded',String(open));};$$('#publicNav a').forEach(a=>a.addEventListener('click',()=>{$('#publicNav').classList.remove('open');mobileMenuBtn.setAttribute('aria-expanded','false')}));}
 $$('[data-search]').forEach(b=>b.onclick=()=>{const input=$('#homeSearch');if(input)input.value=b.dataset.search||b.textContent.trim();input?.focus();});
-$('#homeSearchBtn').onclick=()=>{const q=$('#homeSearch')?.value?.trim();const city=$('#homeLocation')?.value?.trim();registerModal('candidate');if(q||city)setTimeout(()=>toast(`Créez votre compte pour rechercher${q?' « '+q+' »':''}${city?' à '+city:''}.`),250)};
+$('#homeSearchBtn').onclick=()=>{const q=$('#homeSearch')?.value?.trim()||'';const city=$('#homeLocation')?.value?.trim()||'';openPublicPage('jobs');setTimeout(()=>{if($('#jobsSearchQ'))$('#jobsSearchQ').value=q;if($('#jobsSearchCity'))$('#jobsSearchCity').value=city;loadPublicJobs();},0)};
 boot();
+
+function openPublicPage(page){
+  const sections=[...document.querySelectorAll('#guestHome > section')];
+  const target=document.getElementById(page);
+  if(!target) return;
+  sections.forEach(s=>s.classList.toggle('public-page-hidden', s.id!==page));
+  document.querySelectorAll('#publicNav a').forEach(a=>{
+    const p=a.dataset.publicPage || (a.getAttribute('href')==='#home'?'home':'');
+    a.classList.toggle('active',p===page);
+  });
+  window.scrollTo({top:0,behavior:'smooth'});
+  history.replaceState(null,'',`#${page}`);
+  if(page==='jobs') loadPublicJobs();
+  if(page==='candidates') loadPublicCandidates();
+}
+document.querySelectorAll('[data-public-page]').forEach(a=>a.addEventListener('click',e=>{
+  e.preventDefault(); openPublicPage(a.dataset.publicPage);
+}));
+document.querySelector('#publicNav a[href="#home"]')?.addEventListener('click',e=>{
+  e.preventDefault();
+  document.querySelectorAll('#guestHome > section').forEach(s=>s.classList.remove('public-page-hidden'));
+  document.querySelectorAll('#publicNav a').forEach(x=>x.classList.remove('active'));
+  e.currentTarget.classList.add('active');
+  history.replaceState(null,'','#home');
+  window.scrollTo({top:0,behavior:'smooth'});
+});
+document.getElementById('contactLoginBtn')?.addEventListener('click',loginModal);
+bindPasswordToggles();
+
+function roleNow(){return state.session?.user?.role||null}
+function hasActivePaidPlan(){
+  const s=state.session?.subscription;
+  return !!(s && s.effective_status==='active' && (s.plan==='standard'||s.plan==='business'));
+}
+function formatDateFR(v){if(!v)return '—';try{return new Date(v).toLocaleDateString('fr-FR')}catch{return String(v)}}
+function publicActionForJob(jobId){
+  const role=roleNow();
+  if(role==='candidate'){
+    if(hasActivePaidPlan()) return `<button class="btn primary public-apply" data-job="${jobId}">Je postule</button>`;
+    return `<button class="btn disabled-action" type="button" disabled>Je postule — STANDARD/BUSINESS requis</button>`;
+  }
+  if(role==='recruiter') return `<span class="role-note">La candidature est réservée aux demandeurs d’emploi.</span>`;
+  return `<button class="btn outline-blue public-login-apply" data-job="${jobId}">Se connecter pour postuler</button>`;
+}
+function publicActionForCandidate(candidateId){
+  const role=roleNow();
+  if(role==='recruiter'){
+    if(hasActivePaidPlan()) return `<button class="btn primary public-recruit" data-candidate="${candidateId}">Je recrute</button>`;
+    return `<button class="btn disabled-action" type="button" disabled>Je recrute — STANDARD/BUSINESS requis</button>`;
+  }
+  if(role==='candidate') return `<span class="role-note">Action réservée aux recruteurs.</span>`;
+  return `<button class="btn outline-blue public-login-recruiter" data-candidate="${candidateId}">Se connecter comme recruteur</button>`;
+}
+async function loadPublicJobs(){
+  const grid=$('#publicJobsGrid'); if(!grid)return;
+  const q=$('#jobsSearchQ')?.value?.trim()||'', city=$('#jobsSearchCity')?.value?.trim()||'';
+  grid.innerHTML='<div class="panel">Chargement des offres…</div>';
+  try{
+    const d=await api(`/api/jobs?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}`);
+    $('#publicJobsCount').textContent=`${d.jobs.length} offre${d.jobs.length>1?'s':''} trouvée${d.jobs.length>1?'s':''}`;
+    grid.innerHTML=d.jobs.length?d.jobs.map(j=>`
+      <article class="offer-card job-market-card clickable-card" data-job="${j.id}" tabindex="0">
+        <div class="offer-top"><div class="company-logo">${esc((j.company_name||'GE').slice(0,2).toUpperCase())}</div><span class="offer-badge new">${esc((j.plan||'standard').toUpperCase())}</span></div>
+        <h3>${esc(j.title)}</h3>
+        <p class="company">${esc(j.company_name||'Recruteur GLOBAL EMPLOI')}</p>
+        <div class="offer-meta"><span>⌖ ${esc(j.location||'Lieu non précisé')}</span><span>▣ ${esc(j.employment_type||'Type non précisé')}</span></div>
+        <p class="card-summary">${esc((j.description||'').slice(0,150))}${(j.description||'').length>150?'…':''}</p>
+        <div class="offer-footer"><small>Publié le ${formatDateFR(j.created_at)}</small><span>Voir le détail →</span></div>
+      </article>`).join(''):'<div class="panel empty-state">Aucune offre payante active ne correspond à votre recherche.</div>';
+    $$('.job-market-card').forEach(card=>{
+      card.onclick=()=>openJobDetail(Number(card.dataset.job));
+      card.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openJobDetail(Number(card.dataset.job))}}
+    });
+  }catch(err){grid.innerHTML=`<div class="panel">${esc(err.message)}</div>`}
+}
+async function openJobDetail(id){
+  try{
+    const d=await api(`/api/jobs/${id}`),j=d.job;
+    modal(`<div class="detail-popup">
+      <div class="detail-head"><div><span class="pill">${esc(j.employment_type||'Offre')}</span><h2>${esc(j.title)}</h2><p class="muted">${esc(j.company_name||'Recruteur')} • ${esc(j.location||'Lieu non précisé')}</p></div></div>
+      <div class="detail-grid">
+        <div><small>Profession</small><strong>${esc(j.profession||'—')}</strong></div>
+        <div><small>Catégorie</small><strong>${esc(j.category||'—')}</strong></div>
+        <div><small>Rémunération</small><strong>${esc(j.salary||'Non précisée')}</strong></div>
+        <div><small>Postes disponibles</small><strong>${esc(j.vacancies||1)}</strong></div>
+        <div><small>Date de début</small><strong>${formatDateFR(j.starts_at)}</strong></div>
+        <div><small>Date limite</small><strong>${formatDateFR(j.closes_at)}</strong></div>
+      </div>
+      <div class="detail-section"><h3>Description complète</h3><p>${esc(j.description||'')}</p></div>
+      ${j.company_description?`<div class="detail-section"><h3>À propos de l’entreprise</h3><p>${esc(j.company_description)}</p></div>`:''}
+      <div class="detail-actions">${publicActionForJob(j.id)}</div>
+    </div>`);
+    $('.public-apply')?.addEventListener('click',()=>applyFromPublic(id));
+    $('.public-login-apply')?.addEventListener('click',()=>{closeModal();loginModal()});
+  }catch(err){toast(err.message)}
+}
+async function applyFromPublic(id){
+  try{
+    await api(`/api/jobs/${id}/apply`,{method:'POST',body:JSON.stringify({})});
+    closeModal();toast('Votre candidature a été envoyée au recruteur.');
+  }catch(err){toast(err.message)}
+}
+async function loadPublicCandidates(){
+  const grid=$('#publicCandidatesGrid'); if(!grid)return;
+  const q=$('#candidatesSearchQ')?.value?.trim()||'', city=$('#candidatesSearchCity')?.value?.trim()||'';
+  grid.innerHTML='<div class="panel">Chargement des profils…</div>';
+  try{
+    const d=await api(`/api/candidates?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}`);
+    $('#publicCandidatesCount').textContent=`${d.candidates.length} profil${d.candidates.length>1?'s':''} trouvé${d.candidates.length>1?'s':''}`;
+    grid.innerHTML=d.candidates.length?d.candidates.map(c=>`
+      <article class="candidate-market-card clickable-card" data-candidate="${c.id}" tabindex="0">
+        <div class="candidate-photo">${c.photo?`<img src="${esc(c.photo)}" alt="">`:`<span>${esc(((c.first_name||'P')[0]||'P')+((c.last_name||'')[0]||''))}</span>`}</div>
+        <div class="candidate-body"><span class="pill">${esc((c.plan||'standard').toUpperCase())}</span>
+          <h3>${esc(`${c.first_name||''} ${c.last_name||''}`.trim()||'Professionnel')}</h3>
+          <strong>${esc(c.professional_title||c.profession||'Profil professionnel')}</strong>
+          <p>⌖ ${esc(c.city||c.country||'Localisation non précisée')}</p>
+          <p class="card-summary">${esc((c.skills||c.specialty||'').slice(0,130))}</p>
+        </div>
+        <div class="candidate-card-footer"><span>${esc(c.availability||'Disponibilité à préciser')}</span>${publicActionForCandidate(c.id)}</div>
+      </article>`).join(''):'<div class="panel empty-state">Aucun profil actif ne correspond à votre recherche.</div>';
+    $$('.candidate-market-card').forEach(card=>{
+      card.addEventListener('click',e=>{if(e.target.closest('button'))return;openCandidateDetail(Number(card.dataset.candidate))});
+      card.onkeydown=e=>{if((e.key==='Enter'||e.key===' ')&&!e.target.closest('button')){e.preventDefault();openCandidateDetail(Number(card.dataset.candidate))}}
+    });
+    $$('.public-recruit').forEach(b=>b.onclick=e=>{e.stopPropagation();recruitFromPublic(Number(b.dataset.candidate))});
+    $$('.public-login-recruiter').forEach(b=>b.onclick=e=>{e.stopPropagation();loginModal()});
+  }catch(err){grid.innerHTML=`<div class="panel">${esc(err.message)}</div>`}
+}
+async function openCandidateDetail(id){
+  try{
+    const d=await api(`/api/candidates/${id}`),c=d.candidate;
+    modal(`<div class="detail-popup">
+      <div class="candidate-detail-head">${c.photo?`<img src="${esc(c.photo)}" alt="">`:`<div class="candidate-photo large"><span>${esc(((c.first_name||'P')[0]||'P')+((c.last_name||'')[0]||''))}</span></div>`}
+        <div><h2>${esc(`${c.first_name||''} ${c.last_name||''}`.trim()||'Professionnel')}</h2><p><b>${esc(c.professional_title||c.profession||'Profil professionnel')}</b></p><p class="muted">⌖ ${esc(c.city||'—')}, ${esc(c.country||'')}</p></div></div>
+      <div class="detail-grid">
+        <div><small>Domaine</small><strong>${esc(c.activity_domain||'—')}</strong></div>
+        <div><small>Expérience</small><strong>${esc(c.experience_level||c.experience_years||'—')}</strong></div>
+        <div><small>Disponibilité</small><strong>${esc(c.availability||'—')}</strong></div>
+        <div><small>Poste recherché</small><strong>${esc(c.target_position||'—')}</strong></div>
+        <div><small>Contrats souhaités</small><strong>${esc(c.desired_contracts||'—')}</strong></div>
+        <div><small>Mobilité</small><strong>${esc(c.mobility||'—')}</strong></div>
+      </div>
+      <div class="detail-section"><h3>Présentation</h3><p>${esc(c.description||'Aucune présentation renseignée.')}</p></div>
+      <div class="detail-section"><h3>Compétences</h3><p>${esc(c.skills||c.other_skills||'—')}</p></div>
+      ${d.experiences?.length?`<div class="detail-section"><h3>Expériences</h3>${d.experiences.map(x=>`<div class="mini-record"><b>${esc(x.position||'Poste')}</b> — ${esc(x.company||'')}<br><small>${esc(x.city_country||'')} • ${esc(x.start_date||'')} ${x.current_job?'à aujourd’hui':x.end_date?'à '+esc(x.end_date):''}</small><p>${esc(x.responsibilities||'')}</p></div>`).join('')}</div>`:''}
+      ${d.education?.length?`<div class="detail-section"><h3>Formations</h3>${d.education.map(x=>`<div class="mini-record"><b>${esc(x.diploma||'Formation')}</b> • ${esc(x.specialty||'')}<br><small>${esc(x.institution||'')} ${x.graduation_year?'• '+esc(x.graduation_year):''}</small></div>`).join('')}</div>`:''}
+      ${d.languages?.length?`<div class="detail-section"><h3>Langues</h3><p>${d.languages.map(x=>`${esc(x.language)} (${esc(x.level||'—')})`).join(' • ')}</p></div>`:''}
+      <div class="detail-actions">${publicActionForCandidate(c.id)}</div>
+    </div>`);
+    $('.public-recruit')?.addEventListener('click',()=>recruitFromPublic(id));
+    $('.public-login-recruiter')?.addEventListener('click',()=>{closeModal();loginModal()});
+  }catch(err){toast(err.message)}
+}
+async function recruitFromPublic(id){
+  try{
+    await api(`/api/candidates/${id}/recruit`,{method:'POST',body:JSON.stringify({message:'Je souhaite vous contacter pour une opportunité professionnelle.'})});
+    closeModal();toast('Votre demande de recrutement a été envoyée au candidat.');
+  }catch(err){toast(err.message)}
+}
+$('#jobsSearchBtn')?.addEventListener('click',loadPublicJobs);
+$('#candidatesSearchBtn')?.addEventListener('click',loadPublicCandidates);
+['jobsSearchQ','jobsSearchCity'].forEach(id=>$('#'+id)?.addEventListener('keydown',e=>{if(e.key==='Enter')loadPublicJobs()}));
+['candidatesSearchQ','candidatesSearchCity'].forEach(id=>$('#'+id)?.addEventListener('keydown',e=>{if(e.key==='Enter')loadPublicCandidates()}));
+setTimeout(()=>{loadPublicJobs();loadPublicCandidates();},250);

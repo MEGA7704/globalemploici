@@ -31,3 +31,61 @@
 .back-home:hover{text-decoration:underline}
 .account-workspace #viewContent{margin-top:20px}
 @media(max-width:640px){.account-workspace .workspace{padding:18px 12px 50px}.account-workspace .workspace-head{padding:16px;gap:12px}.account-workspace .workspace h2{font-size:24px}.sub-chip{width:100%;text-align:center}}
+
+/* V8 — navigation publique en pages */
+.public-page-hidden{display:none!important}
+#guestHome > section:not(#home){scroll-margin-top:96px}
+.password-wrap{display:flex;align-items:center;position:relative;width:100%}
+.password-wrap input{width:100%;padding-right:46px}
+.password-toggle{position:absolute;right:8px;border:0;background:transparent;color:#1557D6;cursor:pointer;font-size:18px;padding:7px;border-radius:8px}
+.password-toggle:hover{background:#EFF5FF}
+.contact-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+.hero-visual img{object-fit:cover;object-position:center;width:100%;height:100%}
+@media(max-width:760px){.contact-grid{grid-template-columns:1fr}}
+
+/* V9 — marketplace emplois / candidats */
+.market-search{display:grid;grid-template-columns:1fr 1fr auto;gap:14px;align-items:end;background:#fff;border:1px solid #e7ebf0;border-radius:16px;padding:18px;margin:20px 0}
+.results-count{font-size:14px;color:#667085;margin:8px 0 16px;font-weight:600}
+.dynamic-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.clickable-card{cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.clickable-card:hover,.clickable-card:focus{transform:translateY(-3px);box-shadow:0 14px 30px rgba(8,27,58,.10);border-color:#b9cff8;outline:none}
+.card-summary{color:#667085;line-height:1.55}
+.candidate-market-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.candidate-market-card{background:#fff;border:1px solid #e5e9f0;border-radius:16px;overflow:hidden;box-shadow:0 4px 16px rgba(8,27,58,.04)}
+.candidate-photo{height:150px;background:#EFF5FF;display:flex;align-items:center;justify-content:center;color:#1557D6;font-size:34px;font-weight:800}
+.candidate-photo img{width:100%;height:100%;object-fit:cover}
+.candidate-photo.large{width:88px;height:88px;border-radius:18px;flex:0 0 88px}
+.candidate-body{padding:18px}
+.candidate-body h3{margin:8px 0 4px}
+.candidate-card-footer{border-top:1px solid #eef1f5;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.candidate-card-footer>span{font-size:13px;color:#667085}
+.role-note{display:inline-block;font-size:12px;color:#667085;background:#f5f7fa;border-radius:8px;padding:8px 10px}
+.detail-popup{max-width:760px}
+.detail-head h2{margin:10px 0 4px}
+.detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:20px 0}
+.detail-grid>div{background:#f7f9fc;border:1px solid #e9edf3;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:5px}
+.detail-grid small{color:#667085}
+.detail-section{border-top:1px solid #edf0f4;padding-top:16px;margin-top:16px}
+.detail-section p{white-space:pre-wrap;line-height:1.65}
+.detail-actions{display:flex;justify-content:flex-end;align-items:center;gap:12px;border-top:1px solid #edf0f4;margin-top:20px;padding-top:18px}
+.candidate-detail-head{display:flex;gap:16px;align-items:center}
+.candidate-detail-head>img{width:88px;height:88px;object-fit:cover;border-radius:18px}
+.mini-record{padding:10px 0;border-bottom:1px dashed #e5e9ef}
+.application-cards{display:grid;gap:14px;margin-top:16px}
+.application-card{border:1px solid #e4e9f0;border-radius:15px;padding:18px;background:#fff}
+.application-info{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
+.application-info span{background:#f7f9fc;padding:10px;border-radius:10px;display:flex;flex-direction:column;gap:4px}
+.application-info small{color:#667085}
+.application-message{background:#EFF5FF;border-radius:10px;padding:12px}
+.application-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
+.empty-state{text-align:center;padding:35px;color:#667085}
+@media(max-width:1000px){.dynamic-grid,.candidate-market-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.application-info{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){.market-search{grid-template-columns:1fr}.dynamic-grid,.candidate-market-grid{grid-template-columns:1fr}.detail-grid,.application-info{grid-template-columns:1fr}.candidate-card-footer,.application-actions{align-items:stretch;flex-direction:column}.candidate-card-footer .btn,.application-actions .btn{width:100%}}
+
+.danger-zone{border-color:#ffd4d4;background:#fffafa;margin-top:18px}
+
+/* V10 — règles FREE / payant */
+.free-warning{display:block;margin-top:12px;line-height:1.55;color:#8a4b08;background:#fff7e8;border:1px solid #ffd9a0;border-radius:10px;padding:10px}
+.free-expiry-alert{margin:16px 0;padding:14px;border-radius:12px;background:#fff4e5;border:1px solid #ffc970;color:#7a4300;line-height:1.55}
+.visibility-notice{margin-bottom:16px;padding:12px 14px;border-radius:12px;background:#EFF5FF;border:1px solid #cfe0ff;color:#153d7a}
+.disabled-action{opacity:.65;cursor:not-allowed;background:#eef1f5!important;color:#667085!important;border:1px solid #dfe4ea!important}

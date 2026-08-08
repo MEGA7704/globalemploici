@@ -195,6 +195,131 @@ async function candidateCompleteness(env,userId){
   return {percent,recommendations};
 }
 
+
+async function ensureRecruitmentSchema(env){
+  await env.JOB_DB.exec(`
+    CREATE TABLE IF NOT EXISTS recruitment_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recruiter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      candidate_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'sent',
+      message TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(recruiter_id,candidate_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_recruitment_requests_recruiter ON recruitment_requests(recruiter_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_recruitment_requests_candidate ON recruitment_requests(candidate_id,created_at DESC);
+  `);
+}
+async function deleteUserAndRelatedData(env,userId){
+  await ensureCandidateSchema(env);
+  await ensureRecruiterSchema(env);
+  await ensureRecruitmentSchema(env);
+  const conversations=await env.JOB_DB.prepare('SELECT conversation_id FROM conversation_members WHERE user_id=?').bind(userId).all();
+  const cids=(conversations.results||[]).map(x=>Number(x.conversation_id)).filter(Boolean);
+  const statements=[
+    env.JOB_DB.prepare('UPDATE audit_logs SET actor_user_id=NULL WHERE actor_user_id=?').bind(userId),
+    env.JOB_DB.prepare('UPDATE subscription_requests SET admin_id=NULL WHERE admin_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM recruitment_requests WHERE recruiter_id=? OR candidate_id=?').bind(userId,userId),
+    env.JOB_DB.prepare('DELETE FROM applications WHERE candidate_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM jobs WHERE recruiter_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM notifications WHERE user_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM candidate_documents WHERE user_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM candidate_education WHERE user_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM candidate_experiences WHERE user_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM candidate_languages WHERE user_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM recruiter_documents WHERE user_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM candidate_profiles WHERE user_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM recruiter_profiles WHERE user_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM subscriptions WHERE user_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM subscription_requests WHERE user_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM messages WHERE sender_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM conversation_members WHERE user_id=?').bind(userId),
+    env.JOB_DB.prepare('DELETE FROM users WHERE id=?').bind(userId)
+  ];
+  await env.JOB_DB.batch(statements);
+  for(const cid of cids){
+    const left=await env.JOB_DB.prepare('SELECT COUNT(*) n FROM conversation_members WHERE conversation_id=?').bind(cid).first();
+    if(Number(left?.n||0)<2) await env.JOB_DB.prepare('DELETE FROM conversations WHERE id=?').bind(cid).run();
+  }
+}
+
+async function activePaidSubscription(env,userId){
+  const s=await env.JOB_DB.prepare(`SELECT plan,expires_at,status FROM subscriptions
+    WHERE user_id=? AND status='active' AND plan IN ('standard','business')
+    AND datetime(expires_at)>datetime('now')
+    ORDER BY datetime(expires_at) DESC LIMIT 1`).bind(userId).first();
+  return s||null;
+}
+async function cleanupExpiredFreeAccounts(env){
+  const lock='maintenance:subscriptions:v11';
+  try{ if(await env.JOB_KV.get(lock)) return; await env.JOB_KV.put(lock,'1',{expirationTtl:60}); }catch{}
+  const now=nowISO();
+
+  // Normalise les anciennes périodes FREE à 7 jours.
+  await env.JOB_DB.prepare(`UPDATE subscriptions
+    SET expires_at=strftime('%Y-%m-%dT%H:%M:%SZ',datetime(started_at,'+7 days')),updated_at=?
+    WHERE plan='free' AND status='active'
+      AND datetime(expires_at) != datetime(started_at,'+7 days')`).bind(now).run();
+
+  // Tout abonnement payant arrivé à terme devient expiré.
+  await env.JOB_DB.prepare(`UPDATE subscriptions SET status='expired',updated_at=?
+    WHERE plan IN ('standard','business') AND status='active' AND datetime(expires_at)<=datetime('now')`).bind(now).run();
+
+  // Après expiration du dernier abonnement payant, le compte repasse en FREE pendant 7 jours.
+  // Cette période commence à la date d'expiration du payant, pas à la date de la prochaine visite.
+  const expiredPaid=await env.JOB_DB.prepare(`SELECT s.user_id, MAX(s.expires_at) paid_expiry
+    FROM subscriptions s JOIN users u ON u.id=s.user_id
+    WHERE s.plan IN ('standard','business') AND datetime(s.expires_at)<=datetime('now')
+      AND u.role IN ('candidate','recruiter')
+      AND NOT EXISTS(
+        SELECT 1 FROM subscriptions a WHERE a.user_id=s.user_id
+        AND a.plan IN ('standard','business') AND a.status='active' AND datetime(a.expires_at)>datetime('now')
+      )
+    GROUP BY s.user_id LIMIT 100`).all();
+
+  for(const row of (expiredPaid.results||[])){
+    const uid=Number(row.user_id), paidExpiry=row.paid_expiry;
+    const grace=await env.JOB_DB.prepare(`SELECT id FROM subscriptions WHERE user_id=? AND plan='free'
+      AND started_at=? LIMIT 1`).bind(uid,paidExpiry).first();
+    if(!grace){
+      await env.JOB_DB.prepare(`INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status,created_at,updated_at)
+        VALUES(?,?,?,strftime('%Y-%m-%dT%H:%M:%SZ',datetime(?,'+7 days')),'active',?,?)`)
+        .bind(uid,'free',paidExpiry,paidExpiry,now,now).run();
+      await env.JOB_DB.prepare(`INSERT INTO notifications(user_id,type,title,content)
+        VALUES(?,'subscription','Abonnement payant expiré','Votre compte est repassé en FREE pour 7 jours. Vos publications sont masquées et les actions Je postule / Je recrute sont désactivées. Renouvelez avant la fin des 7 jours pour éviter la suppression automatique du compte.')`).bind(uid).run();
+    }
+  }
+
+  // Les FREE dépassés deviennent expirés.
+  await env.JOB_DB.prepare(`UPDATE subscriptions SET status='expired',updated_at=?
+    WHERE plan='free' AND status='active' AND datetime(expires_at)<=datetime('now')`).bind(now).run();
+
+  // Supprime le compte 7 jours après la fin du payant (ou après le FREE initial)
+  // uniquement s'il n'existe aucun nouvel abonnement STANDARD/BUSINESS actif.
+  const doomed=await env.JOB_DB.prepare(`SELECT u.id
+    FROM users u
+    WHERE u.role IN ('candidate','recruiter')
+      AND NOT EXISTS(
+        SELECT 1 FROM subscriptions p WHERE p.user_id=u.id
+        AND p.plan IN ('standard','business') AND p.status='active' AND datetime(p.expires_at)>datetime('now')
+      )
+      AND EXISTS(
+        SELECT 1 FROM subscriptions f WHERE f.user_id=u.id AND f.plan='free'
+        AND datetime(f.expires_at)<=datetime('now')
+      )
+      AND NOT EXISTS(
+        SELECT 1 FROM subscriptions f2 WHERE f2.user_id=u.id AND f2.plan='free'
+        AND f2.status='active' AND datetime(f2.expires_at)>datetime('now')
+      )
+    LIMIT 50`).all();
+
+  for(const row of (doomed.results||[])){
+    try{ await deleteUserAndRelatedData(env,Number(row.id)); }
+    catch(err){ console.error('ACCOUNT_EXPIRY_CLEANUP_FAILED',row.id,err?.message||String(err)); }
+  }
+}
 async function handleRegister(req,env){
   const b=await req.json().catch(()=>({})); const role=b.role==='recruiter'?'recruiter':'candidate';
   const email=safeText(b.email,190).toLowerCase(), password=String(b.password||''), phone=safeText(b.phone,40);
@@ -210,7 +335,7 @@ async function handleRegister(req,env){
     if(!userId) throw new Error('User insert did not return last_row_id');
     if(role==='candidate') { await ensureCandidateSchema(env); await env.JOB_DB.prepare('INSERT INTO candidate_profiles(user_id,first_name,last_name,gender,birth_date,nationality,marital_status,whatsapp,city,location,country,photo,job_alerts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(userId,safeText(b.first_name,100),safeText(b.last_name,100),safeText(b.gender,20),safeText(b.birth_date,20),safeText(b.nationality,100),safeText(b.marital_status,80),safeText(b.whatsapp,40),safeText(b.city,120),safeText(b.location,180),safeText(b.country,100),safeText(b.photo,900000),b.job_alerts?1:0).run(); }
     else { await ensureRecruiterSchema(env); await env.JOB_DB.prepare('INSERT INTO recruiter_profiles(user_id,first_name,last_name,job_title,whatsapp,city,country,photo,marketing_alerts,verification_status) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(userId,safeText(b.first_name,100),safeText(b.last_name,100),safeText(b.job_title,150),safeText(b.whatsapp,40),safeText(b.city,120),safeText(b.country,100),safeText(b.photo,900000),b.marketing_alerts?1:0,'unverified').run(); }
-    const expires=role==='candidate'?addDays(7):new Date(Date.now()+24*3600*1000).toISOString();
+    const expires=addDays(7);
     await env.JOB_DB.prepare('INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status) VALUES(?,?,?,?,?)').bind(userId,'free',nowISO(),expires,'active').run();
     const r=await env.JOB_DB.prepare('SELECT id,email,phone,role,status,session_version FROM users WHERE id=?').bind(userId).first();
     const token=await createSession(env,r); await audit(env,r.id,'REGISTER','user',r.id,{role});
@@ -299,19 +424,108 @@ async function api(req,env,url){
     return json({ok:true,status:'pending'});
   }
   if(p==='/api/recruiter/jobs'&&m==='GET'){ const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403); const rows=await env.JOB_DB.prepare('SELECT * FROM jobs WHERE recruiter_id=? ORDER BY id DESC').bind(s.user.id).all(); return json({jobs:rows.results||[]}); }
-  if(p==='/api/recruiter/applications'&&m==='GET'){ const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403); const rows=await env.JOB_DB.prepare(`SELECT a.*,j.title,p.first_name,p.last_name,p.profession,p.city,u.email,u.phone FROM applications a JOIN jobs j ON j.id=a.job_id JOIN users u ON u.id=a.candidate_id LEFT JOIN candidate_profiles p ON p.user_id=a.candidate_id WHERE j.recruiter_id=? ORDER BY a.id DESC`).bind(s.user.id).all(); return json({applications:rows.results||[]}); }
-  if(p==='/api/jobs'&&m==='GET'){
-    const rows=await env.JOB_DB.prepare("SELECT j.*, r.company_name FROM jobs j LEFT JOIN recruiter_profiles r ON r.user_id=j.recruiter_id WHERE j.status='published' ORDER BY j.id DESC LIMIT 100").all(); return json({jobs:rows.results});
+  if(p==='/api/recruiter/applications'&&m==='GET'){
+    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
+    await ensureCandidateSchema(env);
+    const rows=await env.JOB_DB.prepare(`SELECT a.id,a.status,a.message,a.created_at,j.id job_id,j.title,
+      u.id candidate_id,u.email,u.phone,
+      p.first_name,p.last_name,p.profession,p.professional_title,p.specialty,p.city,p.country,p.experience_level,p.experience_years,p.skills,p.description,p.availability,p.target_position,p.desired_contracts
+      FROM applications a
+      JOIN jobs j ON j.id=a.job_id
+      JOIN users u ON u.id=a.candidate_id
+      LEFT JOIN candidate_profiles p ON p.user_id=a.candidate_id
+      WHERE j.recruiter_id=?
+      ORDER BY a.id DESC`).bind(s.user.id).all();
+    return json({applications:rows.results||[]});
+  }
+  if(/^\/api\/jobs\/\d+$/.test(p)&&m==='GET'){
+    const id=Number(p.split('/').pop());
+    const j=await env.JOB_DB.prepare(`SELECT j.*,r.company_name,r.trade_name,r.sector,r.main_domain,r.description company_description,r.company_city,r.company_country,r.logo
+      FROM jobs j
+      JOIN users u ON u.id=j.recruiter_id AND u.role='recruiter' AND u.status='active'
+      LEFT JOIN recruiter_profiles r ON r.user_id=j.recruiter_id
+      WHERE j.id=? AND j.status='published'
+      AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=j.recruiter_id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now'))`).bind(id).first();
+    if(!j) return json({error:'Offre introuvable ou non disponible.'},404);
+    return json({job:j});
   }
   if(p==='/api/jobs'&&m==='POST'){
-    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403); const b=await req.json(); if(!b.title||!b.description) return json({error:'Titre et description obligatoires.'},400);
+    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
+    const b=await req.json(); if(!b.title||!b.description) return json({error:'Titre et description obligatoires.'},400);
     const r=await env.JOB_DB.prepare('INSERT INTO jobs(recruiter_id,title,profession,category,description,employment_type,location,salary,vacancies,status,starts_at,closes_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id').bind(s.user.id,safeText(b.title,180),safeText(b.profession,150),safeText(b.category,150),safeText(b.description,4000),safeText(b.employment_type,100),safeText(b.location,180),safeText(b.salary,100),Number(b.vacancies||1),'published',safeText(b.starts_at,40)||null,safeText(b.closes_at,40)||null).first(); return json({ok:true,id:r.id},201);
   }
   if(/^\/api\/jobs\/\d+\/apply$/.test(p)&&m==='POST'){
-    const s=await requireSession(req,env); if(s.user.role!=='candidate') return json({error:'Réservé aux candidats.'},403); const jobId=Number(p.split('/')[3]); const b=await req.json().catch(()=>({})); try{await env.JOB_DB.prepare('INSERT INTO applications(job_id,candidate_id,message) VALUES(?,?,?)').bind(jobId,s.user.id,safeText(b.message,1200)).run(); return json({ok:true},201);}catch{return json({error:'Candidature déjà envoyée ou offre invalide.'},409);}
+    const s=await requireSession(req,env);
+    if(s.user.role!=='candidate') return json({error:'Le bouton « Je postule » est réservé aux demandeurs d’emploi.'},403);
+    const paid=await activePaidSubscription(env,s.user.id);
+    if(!paid) return json({error:'Votre compte peut consulter les offres, mais « Je postule » nécessite un abonnement STANDARD ou BUSINESS actif.'},403);
+    const jobId=Number(p.split('/')[3]);
+    const job=await env.JOB_DB.prepare(`SELECT j.id,j.recruiter_id,j.title FROM jobs j JOIN users u ON u.id=j.recruiter_id
+      WHERE j.id=? AND j.status='published' AND u.status='active'
+      AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=j.recruiter_id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now'))`).bind(jobId).first();
+    if(!job) return json({error:'Cette offre n’est plus disponible.'},404);
+    const b=await req.json().catch(()=>({}));
+    try{
+      await env.JOB_DB.batch([
+        env.JOB_DB.prepare('INSERT INTO applications(job_id,candidate_id,message) VALUES(?,?,?)').bind(jobId,s.user.id,safeText(b.message,1200)),
+        env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'application','Nouvelle candidature',?)").bind(job.recruiter_id,`Un candidat vient de postuler à l’offre « ${safeText(job.title,120)} ».`)
+      ]);
+      return json({ok:true},201);
+    }catch{return json({error:'Vous avez déjà postulé à cette offre.'},409);}
   }
   if(p==='/api/candidates'&&m==='GET'){
-    await requireSession(req,env); const rows=await env.JOB_DB.prepare(`SELECT u.id,p.first_name,p.last_name,p.profession,p.specialty,p.city,p.experience_years,p.skills,p.availability FROM users u JOIN candidate_profiles p ON p.user_id=u.id WHERE u.status='active' ORDER BY u.id DESC LIMIT 100`).all(); return json({candidates:rows.results});
+    await ensureCandidateSchema(env);
+    const q=safeText(url.searchParams.get('q'),120).toLowerCase();
+    const city=safeText(url.searchParams.get('city'),120).toLowerCase();
+    const likeQ=`%${q}%`, likeCity=`%${city}%`;
+    const rows=await env.JOB_DB.prepare(`SELECT u.id,p.first_name,p.last_name,p.profession,p.professional_title,p.specialty,p.city,p.country,p.experience_level,p.experience_years,p.skills,p.availability,p.photo,p.target_position,
+      (SELECT s.plan FROM subscriptions s WHERE s.user_id=u.id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now') ORDER BY datetime(s.expires_at) DESC LIMIT 1) plan
+      FROM users u JOIN candidate_profiles p ON p.user_id=u.id
+      WHERE u.role='candidate' AND u.status='active'
+      AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=u.id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now'))
+      AND (?='' OR lower(COALESCE(p.profession,'')) LIKE ? OR lower(COALESCE(p.professional_title,'')) LIKE ? OR lower(COALESCE(p.specialty,'')) LIKE ? OR lower(COALESCE(p.skills,'')) LIKE ?)
+      AND (?='' OR lower(COALESCE(p.city,'')) LIKE ?)
+      ORDER BY u.id DESC LIMIT 200`).bind(q,likeQ,likeQ,likeQ,likeQ,city,likeCity).all();
+    return json({candidates:rows.results||[]});
+  }
+  if(/^\/api\/candidates\/\d+$/.test(p)&&m==='GET'){
+    await ensureCandidateSchema(env);
+    const id=Number(p.split('/').pop());
+    const c=await env.JOB_DB.prepare(`SELECT u.id,p.first_name,p.last_name,p.profession,p.professional_title,p.activity_domain,p.specialty,p.other_skills,p.experience_level,p.experience_years,p.current_situation,p.skills,p.description,p.city,p.country,p.availability,p.target_position,p.target_domain,p.desired_contracts,p.desired_city,p.mobility,p.accepts_travel,p.photo
+      FROM users u JOIN candidate_profiles p ON p.user_id=u.id
+      WHERE u.id=? AND u.role='candidate' AND u.status='active'
+      AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=u.id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now'))`).bind(id).first();
+    if(!c) return json({error:'Profil candidat introuvable ou non disponible.'},404);
+    const edu=await env.JOB_DB.prepare('SELECT diploma,specialty,institution,graduation_year FROM candidate_education WHERE user_id=? ORDER BY id DESC LIMIT 10').bind(id).all();
+    const exp=await env.JOB_DB.prepare('SELECT position,company,city_country,start_date,end_date,current_job,responsibilities FROM candidate_experiences WHERE user_id=? ORDER BY id DESC LIMIT 10').bind(id).all();
+    const langs=await env.JOB_DB.prepare('SELECT language,level FROM candidate_languages WHERE user_id=? ORDER BY id').bind(id).all();
+    return json({candidate:c,education:edu.results||[],experiences:exp.results||[],languages:langs.results||[]});
+  }
+  if(/^\/api\/candidates\/\d+\/recruit$/.test(p)&&m==='POST'){
+    const s=await requireSession(req,env);
+    if(s.user.role!=='recruiter') return json({error:'Le bouton « Je recrute » est réservé aux recruteurs.'},403);
+    const paid=await activePaidSubscription(env,s.user.id);
+    if(!paid) return json({error:'Votre compte peut consulter les profils, mais « Je recrute » nécessite un abonnement STANDARD ou BUSINESS actif.'},403);
+    await ensureRecruitmentSchema(env);
+    const candidateId=Number(p.split('/')[3]);
+    const cand=await env.JOB_DB.prepare("SELECT id FROM users WHERE id=? AND role='candidate' AND status='active'").bind(candidateId).first();
+    if(!cand) return json({error:'Candidat introuvable.'},404);
+    const b=await req.json().catch(()=>({}));
+    try{
+      await env.JOB_DB.batch([
+        env.JOB_DB.prepare('INSERT INTO recruitment_requests(recruiter_id,candidate_id,message) VALUES(?,?,?)').bind(s.user.id,candidateId,safeText(b.message,1200)),
+        env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'recruitment','Nouvelle proposition de recrutement','Un recruteur souhaite entrer en contact avec vous pour une opportunité.')").bind(candidateId)
+      ]);
+      return json({ok:true},201);
+    }catch{return json({error:'Vous avez déjà envoyé une demande de recrutement à ce candidat.'},409);}
+  }
+  if(p==='/api/candidate/recruitment-requests'&&m==='GET'){
+    const s=await requireSession(req,env); if(s.user.role!=='candidate') return json({error:'Réservé aux demandeurs d’emploi.'},403);
+    await ensureRecruitmentSchema(env);
+    const rows=await env.JOB_DB.prepare(`SELECT rr.*,r.company_name,r.trade_name,r.job_title,u.email
+      FROM recruitment_requests rr JOIN users u ON u.id=rr.recruiter_id LEFT JOIN recruiter_profiles r ON r.user_id=rr.recruiter_id
+      WHERE rr.candidate_id=? ORDER BY rr.id DESC`).bind(s.user.id).all();
+    return json({requests:rows.results||[]});
   }
   if(p==='/api/messages'&&m==='GET'){
     const s=await requireSession(req,env); const cid=Number(url.searchParams.get('conversation_id')); const member=await env.JOB_DB.prepare('SELECT 1 FROM conversation_members WHERE conversation_id=? AND user_id=?').bind(cid,s.user.id).first(); if(!member) return json({error:'Accès interdit.'},403); const rows=await env.JOB_DB.prepare('SELECT id,sender_id,content,read_at,created_at FROM messages WHERE conversation_id=? ORDER BY id ASC LIMIT 300').bind(cid).all(); return json({messages:rows.results});
@@ -347,6 +561,23 @@ async function api(req,env,url){
   }
   if(p==='/api/admin/recruiter-verifications'&&m==='GET'){ await requireAdmin(req,env); await ensureRecruiterSchema(env); const rows=await env.JOB_DB.prepare(`SELECT r.user_id,r.first_name,r.last_name,r.job_title,r.company_name,r.organization_type,r.sector,r.company_city,r.verification_status,r.verification_note,u.email,u.phone FROM recruiter_profiles r JOIN users u ON u.id=r.user_id WHERE r.verification_status='pending' ORDER BY r.updated_at DESC`).all(); return json({recruiters:rows.results||[]}); }
   if(/^\/api\/admin\/recruiters\/\d+\/(verify|reject)$/.test(p)&&m==='POST'){ const s=await requireAdmin(req,env), parts=p.split('/'), userId=Number(parts[4]), action=parts[5]; await ensureRecruiterSchema(env); const b=await req.json().catch(()=>({})); const status=action==='verify'?'verified':'unverified'; await env.JOB_DB.prepare('UPDATE recruiter_profiles SET verification_status=?,verification_note=?,email_verified=?,phone_verified=?,company_info_verified=?,official_document_verified=?,updated_at=? WHERE user_id=?').bind(status,action==='verify'?null:safeText(b.note,500)||'Vérification refusée',action==='verify'?1:0,action==='verify'?1:0,action==='verify'?1:0,action==='verify'?1:0,nowISO(),userId).run(); await env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'verification', ?, ?)").bind(userId,action==='verify'?'Entreprise vérifiée':'Vérification à compléter',action==='verify'?'Votre compte recruteur GLOBAL EMPLOI est maintenant vérifié.':'Votre demande de vérification nécessite des corrections. Consultez votre profil entreprise.').run(); await audit(env,s.user.id,action==='verify'?'RECRUITER_VERIFIED':'RECRUITER_VERIFICATION_REJECTED','recruiter',userId); return json({ok:true,status}); }
+  if(p==='/api/account'&&m==='DELETE'){
+    const s=await requireSession(req,env);
+    const uid=s.user.id;
+    await deleteUserAndRelatedData(env,uid);
+    await env.JOB_KV.delete(`sess:${s.token}`);
+    return json({ok:true},200,{'set-cookie':clearCookie()});
+  }
+  if(/^\/api\/admin\/users\/\d+$/.test(p)&&m==='DELETE'){
+    const s=await requireAdmin(req,env);
+    const userId=Number(p.split('/').pop());
+    if(userId===s.user.id) return json({error:'Le Super Admin connecté ne peut pas supprimer son propre compte depuis cette action.'},400);
+    const target=await env.JOB_DB.prepare('SELECT id,role FROM users WHERE id=?').bind(userId).first();
+    if(!target) return json({error:'Compte introuvable.'},404);
+    await audit(env,s.user.id,'USER_DELETE','user',userId,{role:target.role});
+    await deleteUserAndRelatedData(env,userId);
+    return json({ok:true});
+  }
   if(p==='/api/admin/users'&&m==='GET'){ await requireAdmin(req,env); const rows=await env.JOB_DB.prepare(`SELECT u.id,u.email,u.phone,u.role,u.status,u.created_at,s.plan,s.expires_at FROM users u LEFT JOIN subscriptions s ON s.id=(SELECT id FROM subscriptions WHERE user_id=u.id ORDER BY datetime(expires_at) DESC LIMIT 1) ORDER BY u.id DESC LIMIT 500`).all(); return json({users:rows.results}); }
   return json({error:'Route API introuvable.'},404);
 }
@@ -357,7 +588,10 @@ export default {
     try{
       assertBindings(env);
       if(url.pathname.startsWith('/api/')){
-        if(url.pathname!=='/api/health') await checkDatabase(env);
+        if(url.pathname!=='/api/health'){
+          await checkDatabase(env);
+          await cleanupExpiredFreeAccounts(env);
+        }
         return await api(request,env,url);
       }
       return env.ASSETS.fetch(request);

@@ -126,3 +126,34 @@ Menu recruteur : Tableau de bord, Profil entreprise, Publier une offre, Mes offr
 - Les rubriques privées s'ouvrent uniquement après sélection dans le menu déroulant Mon compte.
 - Les pages privées sont affichées en pleine largeur, sans ancienne sidebar.
 - Le bouton « ← Accueil » permet de revenir à la page publique.
+
+
+## V9 — Offres, candidatures et recrutement
+
+- La page publique **Offres d'emploi** affiche uniquement les offres publiées par des recruteurs ayant un abonnement **STANDARD** ou **BUSINESS** actif.
+- Recherche des offres par poste/métier et par ville.
+- Les cartes d'offres sont cliquables et ouvrent le détail complet dans une fenêtre.
+- **Je postule** est disponible uniquement pour les comptes Demandeur d'emploi. Les recruteurs ne peuvent pas candidater.
+- Chaque candidature apparaît dans **Candidatures reçues** du recruteur avec les informations professionnelles et de contact du postulant.
+- La page **Profils / Candidats** présente les candidats actifs sous forme de cartes, avec recherche par métier/compétence et ville.
+- **Je recrute** est disponible uniquement pour les comptes Recruteur et crée une proposition visible par le candidat.
+- La suppression d'un compte supprime ses publications et relations associées (offres, candidatures, profils, documents, propositions et données liées).
+- Une migration complémentaire `migrations/0004_recruitment_marketplace.sql` est fournie. Le Worker sait aussi créer cette table à la demande.
+
+
+## V10 — Règles d'abonnement
+
+- La formule **FREE dure 7 jours** pour les Demandeurs d'emploi et les Recruteurs.
+- Un compte FREE peut consulter les pages publiques, les offres visibles et les profils visibles.
+- Un compte FREE ne peut pas utiliser **Je postule** ni **Je recrute**.
+- Les offres créées par un recruteur FREE restent enregistrées mais **masquées du public**.
+- Les profils/publications FREE restent également masqués.
+- Dès qu'un abonnement **STANDARD** ou **BUSINESS** devient actif, les publications concernées deviennent automatiquement visibles.
+- À l'expiration d'un abonnement STANDARD/BUSINESS, les publications sont automatiquement masquées jusqu'au renouvellement.
+- Un compte qui reste uniquement FREE et n'a jamais eu de formule payante est automatiquement supprimé après l'expiration de ses 7 jours, avec ses publications et données liées.
+- Les anciens comptes FREE recruteur initialement configurés à 24 heures sont normalisés à 7 jours depuis leur date de début.
+- La migration `migrations/0005_free_7_days.sql` est incluse.
+
+
+## V11 — Expiration des abonnements payants
+À l'expiration d'un abonnement STANDARD ou BUSINESS, le compte repasse automatiquement en FREE pour 7 jours à compter de la date d'expiration du payant. Pendant ce délai, ses publications sont masquées et Je postule / Je recrute sont désactivés. Un renouvellement payant réactive automatiquement la visibilité. Sans nouvel abonnement payant actif à la fin des 7 jours, le compte et ses données liées sont supprimés automatiquement.
