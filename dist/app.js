@@ -1,5 +1,6 @@
 const $=(s)=>document.querySelector(s), $$=(s)=>[...document.querySelectorAll(s)];
 const state={session:null,view:'home',freeTimer:null};
+const asList=v=>Array.isArray(v)?v:[];
 const api=async(path,options={})=>{
   const method=String(options.method||'GET').toUpperCase();
   let requestPath=path;
@@ -751,20 +752,31 @@ async function renderCandidates(){
 function messageModal(receiver){modal(`<h2>Envoyer un message</h2><form id="messageForm"><div class="field"><label>Message</label><textarea name="content" required></textarea></div><br><button class="btn primary">Envoyer</button></form>`);$('#messageForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/messages',{method:'POST',body:JSON.stringify({receiver_id:receiver,content:new FormData(e.target).get('content')})});closeModal();toast('Message envoyé')}catch(err){toast(err.message)}}}
 async function renderMessages(){
   if(state.session.user.role==='super_admin'){
-    const [d,u]=await Promise.all([api('/api/support/messages'),api('/api/admin/users')]);
-    const members=u.users.filter(x=>x.role!=='super_admin');
+    const [d,u]=await Promise.all([api('/api/admin/messages'),api('/api/admin/users')]);
+    const members=asList(u.users).filter(x=>x.role!=='super_admin');
+    const support=asList(d.support_messages),privateMessages=asList(d.private_messages);
     $('#viewContent').innerHTML=`
-      <div class="module-hero"><div><span class="section-kicker">SUPPORT</span><h2>Messages administratifs</h2><p>Gérez uniquement les échanges destinés au support GLOBAL EMPLOI. Les conversations privées candidat–recruteur ne sont pas ouvertes ici.</p></div><button id="newSupportMessage" class="btn primary">Nouveau message</button></div>
-      <div class="admin-tabs"><button class="support-tab active" data-status="">Tous</button><button class="support-tab" data-status="unread">Non lus</button><button class="support-tab" data-status="read">Lus</button><button class="support-tab" data-status="archived">Archivés</button></div>
+      <div class="module-hero"><div><span class="section-kicker">MESSAGERIE ADMIN</span><h2>Messages</h2><p>Consultez les demandes au support et l’activité de messagerie enregistrée sur la plateforme.</p></div><div class="report-actions"><button id="refreshAdminMessages" class="btn outline-blue">Actualiser</button><button id="newSupportMessage" class="btn primary">Nouveau message</button></div></div>
+      <div class="inbox-metrics"><button class="inbox-metric active admin-message-mode" data-mode="support"><strong>${formatCount(support.length)}</strong><span>Support</span></button><button class="inbox-metric admin-message-mode" data-mode="private"><strong>${formatCount(privateMessages.length)}</strong><span>Messages plateforme</span></button></div>
+      <div id="supportStatusTabs" class="admin-tabs"><button class="support-tab active" data-status="">Tous</button><button class="support-tab" data-status="unread">Non lus</button><button class="support-tab" data-status="read">Lus</button><button class="support-tab" data-status="archived">Archivés</button></div>
       <div id="supportMessagesList"></div>`;
-    const draw=status=>{
-      const rows=d.messages.filter(x=>!status||x.status===status);
-      $('#supportMessagesList').innerHTML=`<div class="application-cards">${rows.map(x=>`<article class="application-card ${x.status==='unread'?'support-unread':''}"><div class="card-topline"><span class="pill">${esc(x.category||'support')}</span><small>${new Date(x.created_at).toLocaleString('fr-FR')}</small></div><h3>${esc(x.subject||'Message support')}</h3><p><b>De :</b> ${esc(x.sender_email||'Système')} ${x.recipient_email?`<br><b>À :</b> ${esc(x.recipient_email)}`:''}</p><p>${esc(x.content)}</p><div class="application-actions">${x.sender_user_id&&x.sender_user_id!==state.session.user.id?`<button class="btn primary support-reply" data-user="${x.sender_user_id}">Répondre</button>`:''}<button class="btn outline-blue support-status" data-id="${x.id}" data-status="read">Marquer lu</button><button class="btn ghost support-status" data-id="${x.id}" data-status="archived">Archiver</button></div></article>`).join('')||'<div class="panel empty-state">Aucun message support.</div>'}</div>`;
+    let mode='support',status='';
+    const draw=()=>{
+      const box=$('#supportMessagesList');
+      $('#supportStatusTabs').classList.toggle('hidden',mode!=='support');
+      if(mode==='private'){
+        box.innerHTML=`<div class="panel"><h3>Messages enregistrés sur la plateforme</h3><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Expéditeur</th><th>Destinataire(s)</th><th>Conversation</th><th>Message</th></tr></thead><tbody>${privateMessages.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString('fr-FR')}</td><td>${esc(x.sender_email||'Système')}</td><td>${esc(x.recipient_emails||'—')}</td><td>#${esc(x.conversation_id||'—')}</td><td>${esc((x.content||'').slice(0,300))}</td></tr>`).join('')||'<tr><td colspan="5">Aucun message de plateforme.</td></tr>'}</tbody></table></div></div>`;
+        return;
+      }
+      const rows=support.filter(x=>!status||x.status===status);
+      box.innerHTML=`<div class="application-cards">${rows.map(x=>`<article class="application-card ${x.status==='unread'?'support-unread':''}"><div class="card-topline"><span class="pill">${esc(x.category||'support')}</span><small>${new Date(x.created_at).toLocaleString('fr-FR')}</small></div><h3>${esc(x.subject||'Message support')}</h3><p><b>De :</b> ${esc(x.sender_email||'Système')} ${x.recipient_email?`<br><b>À :</b> ${esc(x.recipient_email)}`:''}</p><p>${esc(x.content)}</p><div class="application-actions">${x.sender_user_id&&x.sender_user_id!==state.session.user.id?`<button class="btn primary support-reply" data-user="${x.sender_user_id}">Répondre</button>`:''}<button class="btn outline-blue support-status" data-id="${x.id}" data-status="read">Marquer lu</button><button class="btn ghost support-status" data-id="${x.id}" data-status="archived">Archiver</button></div></article>`).join('')||'<div class="panel empty-state">Aucun message support.</div>'}</div>`;
       $$('.support-status').forEach(b=>b.onclick=async()=>{try{await api(`/api/support/messages/${b.dataset.id}/status`,{method:'POST',body:JSON.stringify({status:b.dataset.status})});toast('Message mis à jour.');renderMessages()}catch(err){toast(err.message)}});
       $$('.support-reply').forEach(b=>b.onclick=()=>supportCompose(Number(b.dataset.user),members));
     };
-    $$('.support-tab').forEach(b=>b.onclick=()=>{$$('.support-tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');draw(b.dataset.status)});
-    $('#newSupportMessage').onclick=()=>supportCompose(null,members);draw('');
+    $$('.admin-message-mode').forEach(b=>b.onclick=()=>{$$('.admin-message-mode').forEach(x=>x.classList.remove('active'));b.classList.add('active');mode=b.dataset.mode;draw()});
+    $$('.support-tab').forEach(b=>b.onclick=()=>{$$('.support-tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');status=b.dataset.status;draw()});
+    $('#refreshAdminMessages').onclick=()=>renderMessages();
+    $('#newSupportMessage').onclick=()=>supportCompose(null,members);draw();
     return;
   }
   const d=await api('/api/conversations');
@@ -808,7 +820,7 @@ function renderSubscription(){
   $('#viewContent').innerHTML=`
     <div class="module-hero"><div><span class="section-kicker">ABONNEMENT</span><h2>Choisissez votre niveau d’accès</h2><p>Votre formule détermine la visibilité de vos publications et l’accès aux actions de recrutement.</p></div><div class="dashboard-plan light-plan"><small>FORMULE ACTUELLE</small><strong>${current}</strong><span>${active?'Active':'Expirée'} ${s?.expires_at?'• '+new Date(s.expires_at).toLocaleDateString('fr-FR'):''}</span></div></div>
     <div class="plans professional-plans">
-      <div class="plan"><h3>FREE</h3><div class="price">0 F</div><p>7 jours</p><ul><li>✓ Consultation des contenus</li><li>✓ Préparation du profil/publications</li><li>✕ ${state.session.user.role==='candidate'?'Je postule':'Je recrute'}</li><li>✕ ${state.session.user.role==='candidate'?'Profil visible aux recruteurs':'Offres visibles au public'}</li></ul><small class="free-warning">Sans activation payante à la fin du délai FREE, le compte est supprimé automatiquement.</small></div>
+      <div class="plan"><h3>FREE</h3><div class="price">0 F</div><p>7 jours</p><ul><li>✓ Consultation des contenus</li><li>✓ Préparation du profil/publications</li><li>✕ ${state.session.user.role==='candidate'?'Je postule':'Je recrute'}</li><li>✕ ${state.session.user.role==='candidate'?'Profil visible aux recruteurs':'Offres visibles au public'}</li></ul><small class="free-warning">Sans activation payante à la fin du délai FREE, le compte est désactivé et masqué du public ; ses données restent conservées pour l’administration.</small></div>
       <div class="plan featured"><h3>STANDARD</h3><div class="price">1 000 F</div><p>30 jours</p><ul><li>✓ Publications visibles</li><li>✓ Je postule / Je recrute</li><li>✓ Messagerie et suivi</li></ul><a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=1000" target="_blank" rel="noopener">Payer 1 000 F avec Wave</a></div>
       <div class="plan"><h3>BUSINESS</h3><div class="price">10 000 F</div><p>365 jours</p><ul><li>✓ Accès complet</li><li>✓ Visibilité longue durée</li><li>✓ Toutes les fonctions professionnelles</li></ul><a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=10000" target="_blank" rel="noopener">Payer 10 000 F avec Wave</a></div>
     </div>
@@ -832,9 +844,9 @@ async function renderPayments(){
 async function renderSettings(){
   const admin=state.session.user.role==='super_admin';
   if(admin){
-    let cfg={};try{cfg=(await api('/api/admin/settings')).settings||{}}catch{}
+    let cfg={},settingsError='';try{cfg=(await api('/api/admin/settings')).settings||{}}catch(err){settingsError=err.message||'Impossible de lire la configuration';}
     $('#viewContent').innerHTML=`
-      <div class="module-hero"><div><span class="section-kicker">PARAMÈTRES GÉNÉRAUX</span><h2>Configuration GLOBAL EMPLOI</h2><p>Gérez les paramètres fonctionnels de la plateforme. Les Secrets Cloudflare restent volontairement invisibles.</p></div><span class="status-badge active">SUPER ADMIN PERMANENT</span></div>
+      <div class="module-hero"><div><span class="section-kicker">PARAMÈTRES GÉNÉRAUX</span><h2>Configuration GLOBAL EMPLOI</h2><p>Gérez les paramètres fonctionnels de la plateforme. Les Secrets Cloudflare restent volontairement invisibles.</p></div><div class="report-actions"><span class="status-badge ${settingsError?'':'active'}">${settingsError?'Valeurs locales de secours':'Données D1 synchronisées'}</span><button id="refreshAdminSettings" class="btn outline-blue">Actualiser</button></div></div>${settingsError?`<div class="panel error-panel"><p>${esc(settingsError)}</p><p class="muted">Le formulaire reste disponible avec les valeurs par défaut. Cliquez sur Actualiser après vérification de D1.</p></div>`:''}
       <div class="dashboard-columns admin-settings-grid">
         <div class="panel"><h3>Identité & support</h3><form id="adminSettingsForm" class="form-grid">
           <div class="field"><label>Nom de la plateforme</label><input name="platform_name" value="${esc(cfg.platform_name||'GLOBAL EMPLOI')}"></div>
@@ -852,6 +864,7 @@ async function renderSettings(){
         <div class="panel"><h3>Sécurité Super Admin</h3><p class="muted">Votre compte reste actif sans limite de durée. Les Secrets Cloudflare ne sont jamais affichés ici.</p><form id="passwordForm" class="form-grid"><div class="field full"><label>Mot de passe actuel</label><div class="password-wrap"><input id="oldPassword" name="old_password" type="password" required><button class="password-toggle" type="button" data-toggle-password="oldPassword">◉</button></div></div><div class="field full"><label>Nouveau mot de passe</label><div class="password-wrap"><input id="newPassword" name="new_password" type="password" minlength="8" required><button class="password-toggle" type="button" data-toggle-password="newPassword">◉</button></div></div><div class="full"><button class="btn primary">Changer le mot de passe</button></div></form><div class="permanent-admin-card" style="margin-top:14px"><b>Compte gérant permanent</b><p>Ce compte n’expire jamais et ne peut pas être supprimé par les mécanismes automatiques FREE.</p></div></div>
       </div>`;
     bindPasswordToggles();
+    $('#refreshAdminSettings')?.addEventListener('click',()=>renderSettings());
     $('#adminSettingsForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/admin/settings',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Paramètres enregistrés.')}catch(err){toast(err.message)}};
     $('#passwordForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/change-password',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Mot de passe modifié. Reconnexion nécessaire.');setTimeout(()=>location.reload(),900)}catch(err){toast(err.message)}};
     return;
@@ -870,19 +883,13 @@ async function renderSettings(){
 }
 async function renderAdminInbox(){
   if(state.session.user.role!=='super_admin')throw new Error('Accès interdit');
-  const d=await api('/api/admin/inbox');
-  const counts={
-    registrations:d.registrations.length,
-    activations:d.activation_requests.length,
-    verifications:d.verification_requests.length,
-    support:d.support_requests.length,
-    recruitments:d.recruitment_requests.length,
-    applications:d.applications.length
-  };
+  const raw=await api('/api/admin/inbox');
+  const d={registrations:asList(raw.registrations),activation_requests:asList(raw.activation_requests),verification_requests:asList(raw.verification_requests),support_requests:asList(raw.support_requests),recruitment_requests:asList(raw.recruitment_requests),applications:asList(raw.applications)};
+  const counts={registrations:d.registrations.length,activations:d.activation_requests.length,verifications:d.verification_requests.length,support:d.support_requests.length,recruitments:d.recruitment_requests.length,applications:d.applications.length};
   $('#viewContent').innerHTML=`
     <div class="module-hero">
       <div><span class="section-kicker">CENTRE DE RÉCEPTION</span><h2>Demandes & inscriptions</h2><p>Toutes les inscriptions et toutes les demandes enregistrées par GLOBAL EMPLOI sont regroupées ici, quel que soit leur statut.</p></div>
-      <span class="status-badge active">${formatCount(counts.registrations)} inscription(s)</span>
+      <div class="report-actions"><span class="status-badge active">${formatCount(counts.registrations)} inscription(s)</span><button id="refreshAdminInbox" class="btn outline-blue">Actualiser</button></div>
     </div>
     <div class="inbox-metrics">
       <button class="inbox-metric active" data-inbox="registrations"><strong>${formatCount(counts.registrations)}</strong><span>Inscriptions</span></button>
@@ -914,14 +921,16 @@ async function renderAdminInbox(){
     }
   };
   $$('.inbox-metric').forEach(b=>b.onclick=()=>{$$('.inbox-metric').forEach(x=>x.classList.remove('active'));b.classList.add('active');draw(b.dataset.inbox)});
+  $('#refreshAdminInbox').onclick=()=>renderAdminInbox();
   draw('registrations');
 }
 
 async function renderAdminMembers(){
   if(state.session.user.role!=='super_admin')throw new Error('Accès interdit');
-  const d=await api('/api/admin/users');
+  const raw=await api('/api/admin/users');
+  const d={users:asList(raw.users)};
   $('#viewContent').innerHTML=`
-    <div class="module-hero"><div><span class="section-kicker">GESTION CENTRALE</span><h2>Membres inscrits</h2><p>Consultez les profils, abonnements et publications. Suspendez, réactivez ou supprimez les comptes si nécessaire.</p></div><div class="dashboard-plan light-plan"><small>TOTAL GÉRÉ</small><strong>${formatCount(d.users.filter(x=>x.role!=='super_admin').length)}</strong><span>membres inscrits</span></div></div>
+    <div class="module-hero"><div><span class="section-kicker">GESTION CENTRALE</span><h2>Membres inscrits</h2><p>Consultez tous les comptes, y compris les comptes FREE expirés automatiquement désactivés mais conservés dans D1.</p></div><div class="report-actions"><div class="dashboard-plan light-plan"><small>TOTAL GÉRÉ</small><strong>${formatCount(d.users.filter(x=>x.role!=='super_admin').length)}</strong><span>membres inscrits</span></div><button id="refreshAdminMembers" class="btn outline-blue">Actualiser</button></div></div>
     <div class="market-search admin-filter">
       <div class="field"><label>Recherche</label><input id="adminMemberSearch" placeholder="E-mail, téléphone, rôle…"></div>
       <div class="field"><label>Rôle</label><select id="adminMemberRole"><option value="">Tous</option><option value="candidate">Demandeurs</option><option value="recruiter">Recruteurs</option></select></div>
@@ -937,7 +946,7 @@ async function renderAdminMembers(){
     $$('.admin-delete-user').forEach(b=>b.onclick=()=>adminDeleteUser(b.dataset.id,b.dataset.email));
     $$('.admin-member-detail').forEach(b=>b.onclick=()=>adminMemberDetail(Number(b.dataset.id)));
   };
-  $('#adminMemberFilterBtn').onclick=draw;$('#adminMemberSearch').oninput=draw;$('#adminMemberRole').onchange=draw;$('#adminMemberStatus').onchange=draw;draw();
+  $('#adminMemberFilterBtn').onclick=draw;$('#adminMemberSearch').oninput=draw;$('#adminMemberRole').onchange=draw;$('#adminMemberStatus').onchange=draw;$('#refreshAdminMembers').onclick=()=>renderAdminMembers();draw();
 }
 async function adminMemberDetail(id){
   try{
@@ -963,15 +972,15 @@ async function adminMemberDetail(id){
 async function renderAdminActivations(){
   const load=async(status='pending')=>api(`/api/admin/activation-history?status=${encodeURIComponent(status)}`);
   $('#viewContent').innerHTML=`
-    <div class="module-hero"><div><span class="section-kicker">ABONNEMENTS</span><h2>Gestion des activations</h2><p>Validez les paiements, consultez les demandes traitées et retrouvez l’historique complet.</p></div></div>
+    <div class="module-hero"><div><span class="section-kicker">ABONNEMENTS</span><h2>Gestion des activations</h2><p>Validez les paiements, consultez les demandes traitées et retrouvez l’historique complet.</p></div><button id="refreshAdminActivations" class="btn outline-blue">Actualiser</button></div>
     <div class="admin-tabs"><button class="admin-tab active" data-status="pending">En attente</button><button class="admin-tab" data-status="approved">Activées</button><button class="admin-tab" data-status="rejected">Rejetées</button><button class="admin-tab" data-status="">Historique complet</button></div>
     <div id="activationList"><div class="page-skeleton compact"><span></span><span></span></div></div>`;
   const draw=async status=>{
     const box=$('#activationList');
     box.innerHTML='<div class="page-skeleton compact"><span></span><span></span></div>';
     try{
-      const d=await load(status);
-      box.innerHTML=`<div class="application-cards">${d.requests.map(x=>`<article class="application-card">
+      const d=await load(status),requests=asList(d.requests);
+      box.innerHTML=`<div class="application-cards">${requests.map(x=>`<article class="application-card">
         <div class="card-topline"><b>${esc(x.email)}</b><span class="pill">${esc(x.status)}</span></div>
         <h3>${esc(x.plan.toUpperCase())} — ${formatCount(x.amount)} FCFA</h3>
         <div class="application-info"><span><small>Rôle</small>${esc(x.role)}</span><span><small>Téléphone paiement</small>${esc(x.payer_phone)}</span><span><small>ID transaction</small>${esc(x.transaction_id)}</span><span><small>Date</small>${new Date(x.created_at).toLocaleString('fr-FR')}</span></div>
@@ -983,13 +992,15 @@ async function renderAdminActivations(){
     }catch(err){box.innerHTML=directoryError('Impossible de charger les activations.',err);bindDirectoryRetry(box,()=>draw(status))}
   };
   $$('.admin-tab').forEach(b=>b.onclick=()=>{$$('.admin-tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');draw(b.dataset.status)});
+  $('#refreshAdminActivations').onclick=()=>renderAdminActivations();
   await draw('pending');
 }
 
 async function renderAdminVerifications(){
-  const d=await api('/api/admin/recruiter-verifications/all');
+  const raw=await api('/api/admin/recruiter-verifications/all');
+  const d={recruiters:asList(raw.recruiters)};
   $('#viewContent').innerHTML=`
-    <div class="module-hero"><div><span class="section-kicker">CONTRÔLE ENTREPRISE</span><h2>Vérifications recruteurs</h2><p>Examinez les dossiers, validez les entreprises ou demandez des compléments.</p></div></div>
+    <div class="module-hero"><div><span class="section-kicker">CONTRÔLE ENTREPRISE</span><h2>Vérifications recruteurs</h2><p>Examinez les dossiers, validez les entreprises ou demandez des compléments.</p></div><button id="refreshAdminVerifications" class="btn outline-blue">Actualiser</button></div>
     <div class="market-search admin-filter"><div class="field"><label>Recherche</label><input id="verifySearch" placeholder="Entreprise, responsable, e-mail…"></div><div class="field"><label>Statut</label><select id="verifyStatus"><option value="">Tous</option><option value="pending">En cours</option><option value="verified">Vérifiés</option><option value="unverified">Non vérifiés</option><option value="rejected">À compléter</option></select></div><button id="verifyFilter" class="btn primary">Filtrer</button></div>
     <div id="verifyList"></div>`;
   const draw=()=>{
@@ -1000,13 +1011,14 @@ async function renderAdminVerifications(){
     $$('.recruiter-reject').forEach(b=>b.onclick=async()=>{await recruiterVerificationAction(b.dataset.id,'reject');renderAdminVerifications()});
     $$('.admin-member-detail').forEach(b=>b.onclick=()=>adminMemberDetail(Number(b.dataset.id)));
   };
-  $('#verifyFilter').onclick=draw;$('#verifySearch').oninput=draw;$('#verifyStatus').onchange=draw;draw();
+  $('#verifyFilter').onclick=draw;$('#verifySearch').oninput=draw;$('#verifyStatus').onchange=draw;$('#refreshAdminVerifications').onclick=()=>renderAdminVerifications();draw();
 }
 
 async function renderAdminJobs(){
-  const d=await api('/api/admin/jobs');
+  const raw=await api('/api/admin/jobs');
+  const d={jobs:asList(raw.jobs)};
   $('#viewContent').innerHTML=`
-    <div class="module-hero"><div><span class="section-kicker">MODÉRATION</span><h2>Toutes les offres</h2><p>Supervisez les publications, leur visibilité et leur statut.</p></div><span class="status-badge">${formatCount(d.jobs.length)} offres</span></div>
+    <div class="module-hero"><div><span class="section-kicker">MODÉRATION</span><h2>Toutes les offres</h2><p>Supervisez toutes les publications, y compris celles appartenant à des comptes expirés ou désactivés.</p></div><div class="report-actions"><span class="status-badge">${formatCount(d.jobs.length)} offres</span><button id="refreshAdminJobs" class="btn outline-blue">Actualiser</button></div></div>
     <div class="market-search admin-filter"><div class="field"><label>Recherche</label><input id="adminJobSearch" placeholder="Titre, entreprise, ville…"></div><div class="field"><label>Statut</label><select id="adminJobStatus"><option value="">Tous</option><option value="published">Publiées</option><option value="draft">Brouillons</option><option value="suspended">Suspendues</option><option value="closed">Clôturées</option></select></div><button id="adminJobFilter" class="btn primary">Filtrer</button></div>
     <div id="adminJobsList"></div>`;
   const draw=()=>{
@@ -1018,13 +1030,14 @@ async function renderAdminJobs(){
     $$('.admin-job-status').forEach(s=>s.onchange=async()=>{try{await api(`/api/admin/jobs/${s.dataset.id}/status`,{method:'POST',body:JSON.stringify({status:s.value})});toast('Statut de l’offre mis à jour.')}catch(err){toast(err.message)}});
     $$('.admin-job-delete').forEach(b=>b.onclick=async()=>{if(!confirm('Supprimer définitivement cette offre ?'))return;try{await api(`/api/admin/jobs/${b.dataset.id}`,{method:'DELETE'});toast('Offre supprimée.');renderAdminJobs()}catch(err){toast(err.message)}});
   };
-  $('#adminJobFilter').onclick=draw;$('#adminJobSearch').oninput=draw;$('#adminJobStatus').onchange=draw;draw();
+  $('#adminJobFilter').onclick=draw;$('#adminJobSearch').oninput=draw;$('#adminJobStatus').onchange=draw;$('#refreshAdminJobs').onclick=()=>renderAdminJobs();draw();
 }
 
 async function renderAdminApplications(){
-  const d=await api('/api/admin/applications');
+  const raw=await api('/api/admin/applications');
+  const d={applications:asList(raw.applications)};
   $('#viewContent').innerHTML=`
-    <div class="module-hero"><div><span class="section-kicker">SUIVI GLOBAL</span><h2>Candidatures de la plateforme</h2><p>Supervisez les mouvements sans vous substituer au recruteur dans sa décision.</p></div><span class="status-badge">${formatCount(d.applications.length)} candidatures</span></div>
+    <div class="module-hero"><div><span class="section-kicker">SUIVI GLOBAL</span><h2>Candidatures de la plateforme</h2><p>Supervisez toutes les candidatures enregistrées dans D1.</p></div><div class="report-actions"><span class="status-badge">${formatCount(d.applications.length)} candidatures</span><button id="refreshAdminApplications" class="btn outline-blue">Actualiser</button></div></div>
     <div class="market-search admin-filter"><div class="field"><label>Recherche</label><input id="adminAppSearch" placeholder="Candidat, offre, entreprise…"></div><div class="field"><label>Statut</label><select id="adminAppStatus"><option value="">Tous</option><option value="submitted">Nouvelles</option><option value="reviewing">À l’étude</option><option value="accepted">Acceptées</option><option value="rejected">Refusées</option></select></div><button id="adminAppFilter" class="btn primary">Filtrer</button></div>
     <div id="adminAppsTable"></div>`;
   const draw=()=>{
@@ -1032,7 +1045,7 @@ async function renderAdminApplications(){
     const rows=d.applications.filter(a=>(!st||a.status===st)&&(!q||`${a.candidate_email} ${a.title} ${a.company_name||a.recruiter_email}`.toLowerCase().includes(q)));
     $('#adminAppsTable').innerHTML=`<div class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Candidat</th><th>Offre</th><th>Recruteur</th><th>Statut</th></tr></thead><tbody>${rows.map(a=>`<tr><td>${new Date(a.created_at).toLocaleDateString('fr-FR')}</td><td>${esc(a.candidate_email)}</td><td>${esc(a.title)}</td><td>${esc(a.company_name||a.recruiter_email)}</td><td><span class="pill">${esc(a.status)}</span></td></tr>`).join('')||'<tr><td colspan="5">Aucune candidature.</td></tr>'}</tbody></table></div></div>`;
   };
-  $('#adminAppFilter').onclick=draw;$('#adminAppSearch').oninput=draw;$('#adminAppStatus').onchange=draw;draw();
+  $('#adminAppFilter').onclick=draw;$('#adminAppSearch').oninput=draw;$('#adminAppStatus').onchange=draw;$('#refreshAdminApplications').onclick=()=>renderAdminApplications();draw();
 }
 
 async function renderAdminReports(){
@@ -1073,9 +1086,10 @@ function downloadCsv(filename,rows){
 }
 
 async function renderAdminLogs(){
-  const d=await api('/api/admin/audit-logs');
+  const raw=await api('/api/admin/audit-logs');
+  const d={logs:asList(raw.logs)};
   $('#viewContent').innerHTML=`
-    <div class="module-hero"><div><span class="section-kicker">SÉCURITÉ</span><h2>Journal d’activité</h2><p>Historique en lecture seule des opérations sensibles réalisées sur la plateforme.</p></div></div>
+    <div class="module-hero"><div><span class="section-kicker">SÉCURITÉ</span><h2>Journal d’activité</h2><p>Historique en lecture seule des opérations sensibles réalisées sur la plateforme.</p></div><div class="report-actions"><span class="status-badge">${formatCount(d.logs.length)} événement(s)</span><button id="refreshAdminLogs" class="btn outline-blue">Actualiser</button></div></div>
     <div class="market-search admin-filter"><div class="field"><label>Recherche</label><input id="auditSearch" placeholder="Action, utilisateur, cible…"></div><div class="field"><label>Type d’action</label><select id="auditAction"><option value="">Toutes</option><option value="LOGIN">Connexions</option><option value="SUBSCRIPTION">Abonnements</option><option value="USER">Membres</option><option value="JOB">Offres</option><option value="PASSWORD">Mots de passe</option></select></div><button id="auditFilter" class="btn primary">Filtrer</button></div>
     <div id="auditTable"></div>`;
   const draw=()=>{
@@ -1083,7 +1097,7 @@ async function renderAdminLogs(){
     const rows=d.logs.filter(x=>(!type||String(x.action).includes(type))&&(!q||`${x.actor_email||''} ${x.action||''} ${x.target_type||''} ${x.target_id||''}`.toLowerCase().includes(q)));
     $('#auditTable').innerHTML=`<div class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Acteur</th><th>Action</th><th>Cible</th><th>Détails</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString('fr-FR')}</td><td>${esc(x.actor_email||'Système')}</td><td><b>${esc(x.action)}</b></td><td>${esc(x.target_type||'—')} ${x.target_id?'#'+esc(x.target_id):''}</td><td><small>${esc((x.metadata||'').slice(0,220))}</small></td></tr>`).join('')||'<tr><td colspan="5">Aucune activité.</td></tr>'}</tbody></table></div></div>`;
   };
-  $('#auditFilter').onclick=draw;$('#auditSearch').oninput=draw;$('#auditAction').onchange=draw;draw();
+  $('#auditFilter').onclick=draw;$('#auditSearch').oninput=draw;$('#auditAction').onchange=draw;$('#refreshAdminLogs').onclick=()=>renderAdminLogs();draw();
 }
 
 async function renderAdmin(){
@@ -1126,7 +1140,7 @@ function scheduleFreePopup(){
     if(!$('#modal').classList.contains('hidden'))return;
     modal(`<h2>Votre accès FREE est limité à 7 jours</h2>
       <p class="muted">Vous pouvez consulter toutes les pages, les offres visibles et les profils publiés, mais vous ne pouvez pas encore utiliser « Je postule » ou « Je recrute ».</p>
-      <div class="free-expiry-alert"><b>Important :</b> si votre abonnement STANDARD ou BUSINESS n’est pas activé avant la fin de vos 7 jours FREE, votre compte et ses publications seront automatiquement supprimés. Après l’expiration d’un abonnement payant, votre compte repasse également en FREE pendant 7 jours : il est masqué jusqu’au renouvellement et sera supprimé si aucun nouvel abonnement payant n’est activé avant la fin de ce délai.</div>
+      <div class="free-expiry-alert"><b>Important :</b> si votre abonnement STANDARD ou BUSINESS n’est pas activé avant la fin de vos 7 jours FREE, votre compte sera désactivé et ses publications seront masquées. Après l’expiration d’un abonnement payant, votre compte repasse également en FREE pendant 7 jours. Les données restent conservées dans l’administration et un abonnement payant peut réactiver le compte.</div>
       <div class="plans" style="grid-template-columns:1fr 1fr">
         <div class="plan featured"><h3>STANDARD</h3><div class="price">1 000 F</div><p>30 jours</p><a class="btn primary" target="_blank" rel="noopener" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=1000">Choisir STANDARD</a></div>
         <div class="plan"><h3>BUSINESS</h3><div class="price">10 000 F</div><p>365 jours</p><a class="btn primary" target="_blank" rel="noopener" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=10000">Choisir BUSINESS</a></div>

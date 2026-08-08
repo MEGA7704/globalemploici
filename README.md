@@ -150,13 +150,13 @@ Menu recruteur : Tableau de bord, Profil entreprise, Publier une offre, Mes offr
 - Les profils/publications FREE restent également masqués.
 - Dès qu'un abonnement **STANDARD** ou **BUSINESS** devient actif, les publications concernées deviennent automatiquement visibles.
 - À l'expiration d'un abonnement STANDARD/BUSINESS, les publications sont automatiquement masquées jusqu'au renouvellement.
-- Un compte qui reste uniquement FREE et n'a jamais eu de formule payante est automatiquement supprimé après l'expiration de ses 7 jours, avec ses publications et données liées.
+- Un compte qui reste uniquement FREE après l'expiration de ses 7 jours est automatiquement désactivé et masqué du public. Ses données restent conservées dans D1 afin que le Super Admin garde l'historique complet.
 - Les anciens comptes FREE recruteur initialement configurés à 24 heures sont normalisés à 7 jours depuis leur date de début.
 - La migration `migrations/0005_free_7_days.sql` est incluse.
 
 
 ## V11 — Expiration des abonnements payants
-À l'expiration d'un abonnement STANDARD ou BUSINESS, le compte repasse automatiquement en FREE pour 7 jours à compter de la date d'expiration du payant. Pendant ce délai, ses publications sont masquées et Je postule / Je recrute sont désactivés. Un renouvellement payant réactive automatiquement la visibilité. Sans nouvel abonnement payant actif à la fin des 7 jours, le compte et ses données liées sont supprimés automatiquement.
+À l'expiration d'un abonnement STANDARD ou BUSINESS, le compte repasse automatiquement en FREE pour 7 jours à compter de la date d'expiration du payant. Pendant ce délai, ses publications sont masquées et Je postule / Je recrute sont désactivés. Un renouvellement payant réactive automatiquement la visibilité. Sans nouvel abonnement payant actif à la fin des 7 jours, le compte est désactivé et masqué du public, mais ses données restent visibles dans l'administration. Une activation STANDARD/BUSINESS le réactive automatiquement.
 
 
 ## V12 — Initialiser / Récupérer le Super Admin
@@ -279,3 +279,21 @@ La migration `migrations/0007_admin_modules.sql` ajoute les tables `app_settings
 - Les plafonds de 500 / 2000 enregistrements ont été retirés des principales vues Super Admin afin que toutes les inscriptions et demandes restent accessibles.
 - Le journal Admin n’est plus redéfini deux fois : la version filtrable reste active.
 - Aucun secret Super Admin n’est ajouté au frontend, au README ou à `wrangler.jsonc`.
+
+
+## V22 — Fiabilisation des données Super Admin
+
+- Les comptes FREE expirés ne sont plus supprimés physiquement par la maintenance automatique : ils sont désactivés et masqués du public afin de préserver l'historique Admin.
+- Les écrans **Demandes & inscriptions**, **Membres**, **Activations**, **Vérifications**, **Offres**, **Candidatures**, **Journal**, **Messages** et **Paramètres** lisent directement les données D1 et disposent d'une actualisation explicite.
+- Les requêtes Admin utilisent des jointures tolérantes afin qu'une relation ancienne ou incomplète ne masque pas toute une ligne.
+- L'activation d'un abonnement STANDARD/BUSINESS réactive automatiquement un compte précédemment désactivé par expiration FREE.
+- La page Messages Admin regroupe les messages de support et les messages enregistrés dans la messagerie de la plateforme.
+- `migrations/0009_admin_data_integrity.sql` ajoute les index Admin et initialise les paramètres de plateforme manquants.
+
+Pour une base déjà déployée, appliquer si possible :
+
+```bash
+npx wrangler d1 execute job_d1 --remote --file=migrations/0009_admin_data_integrity.sql
+```
+
+Le Worker V22 garde néanmoins une logique d'auto-réparation des modules Admin pour les anciennes bases.
