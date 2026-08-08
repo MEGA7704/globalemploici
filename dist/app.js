@@ -6,6 +6,15 @@ function modal(html){$('#modalBody').innerHTML=html;$('#modal').classList.remove
 function closeModal(){$('#modal').classList.add('hidden')}
 $('#closeModal').onclick=closeModal;$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
 
+document.addEventListener('click',e=>{
+  const btn=e.target.closest?.('#openAdminRecovery');
+  if(!btn)return;
+  e.preventDefault();
+  e.stopPropagation();
+  superAdminRecoveryModal();
+});
+
+
 function bindPasswordToggles(root=document){
   root.querySelectorAll('[data-toggle-password]').forEach(btn=>{
     if(btn.dataset.bound==='1') return;
@@ -20,6 +29,58 @@ function bindPasswordToggles(root=document){
     });
   });
 }
+async function superAdminRecoveryModal(){
+  let status={configured:false,exists:false,active:false};
+  try{status=await api('/api/admin-recovery/status')}catch{}
+  modal(`<div class="admin-recovery-box">
+    <span class="section-kicker">SÉCURITÉ SUPER ADMIN</span>
+    <h2>Initialiser / Récupérer le Super Admin</h2>
+    <p class="muted">Cette procédure utilise uniquement les Secrets Cloudflare. Aucun mot de passe n’est affiché dans le navigateur.</p>
+    <div class="recovery-status ${status.configured?'ok':'warn'}">
+      <b>Configuration Cloudflare :</b> ${status.configured?'Secrets requis détectés ✓':'Secrets incomplets'}
+      <br><b>Compte Super Admin :</b> ${status.exists?(status.active?'Présent et actif ✓':'Présent mais inactif'):'Absent'}
+    </div>
+    <form id="adminRecoveryForm" class="form-grid">
+      <div class="field full">
+        <label>Adresse e-mail Super Admin *</label>
+        <input name="email" type="email" placeholder="Doit correspondre à SUPER_ADMIN_EMAIL" required>
+      </div>
+      <div class="field full">
+        <label>Jeton de récupération *</label>
+        <div class="password-wrap">
+          <input id="adminRecoveryToken" name="recovery_token" type="password" autocomplete="off" required>
+          <button class="password-toggle" type="button" data-toggle-password="adminRecoveryToken" aria-label="Afficher le jeton">◉</button>
+        </div>
+        <small>Utilisez la valeur du Secret Cloudflare SUPER_ADMIN_RECOVERY_TOKEN.</small>
+      </div>
+      <div class="full recovery-warning">
+        <b>Important :</b> le compte sera recréé ou restauré avec le mot de passe actuellement enregistré dans le Secret <code>SUPER_ADMIN_PASSWORD</code>. Les anciennes sessions seront invalidées.
+      </div>
+      <div class="full"><button class="btn primary" type="submit">Récupérer le Super Admin</button></div>
+    </form>
+    <div class="recovery-help">
+      <b>Secrets requis :</b><br>
+      SUPER_ADMIN_EMAIL<br>
+      SUPER_ADMIN_PASSWORD<br>
+      SUPER_ADMIN_RECOVERY_TOKEN<br>
+      SESSION_SECRET
+    </div>
+  </div>`);
+  bindPasswordToggles();
+  const form=$('#adminRecoveryForm');
+  if(form){
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      const data=Object.fromEntries(new FormData(e.target));
+      try{
+        const r=await api('/api/admin-recovery/recover',{method:'POST',body:JSON.stringify(data)});
+        toast(r.message||'Super Admin récupéré.');
+        setTimeout(()=>loginModal(),700);
+      }catch(err){toast(err.message)}
+    };
+  }
+}
+
 function loginModal(){
   modal(`<h2>Connexion</h2><p class="muted">Accédez à votre espace GLOBAL EMPLOI.</p>
     <form id="loginForm" class="form-grid">
