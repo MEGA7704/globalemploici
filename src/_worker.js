@@ -647,6 +647,68 @@ async function api(req,env,url){
       WHERE rr.candidate_id=? ORDER BY rr.id DESC`).bind(s.user.id).all();
     return json({requests:rows.results||[]});
   }
+  if(p==='/api/candidate/applications'&&m==='GET'){
+    const s=await requireSession(req,env); if(s.user.role!=='candidate') return json({error:'Réservé aux demandeurs d’emploi.'},403);
+    const rows=await env.JOB_DB.prepare(`SELECT a.id,a.status,a.message,a.created_at,a.updated_at,j.id job_id,j.title,j.location,j.employment_type,j.salary,r.company_name
+      FROM applications a JOIN jobs j ON j.id=a.job_id LEFT JOIN recruiter_profiles r ON r.user_id=j.recruiter_id
+      WHERE a.candidate_id=? ORDER BY a.id DESC`).bind(s.user.id).all();
+    return json({applications:rows.results||[]});
+  }
+  if(/^\/api\/recruiter\/applications\/\d+\/status$/.test(p)&&m==='POST'){
+    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
+    const id=Number(p.split('/')[4]), b=await req.json().catch(()=>({}));
+    const status=['submitted','reviewing','accepted','rejected'].includes(b.status)?b.status:null;
+    if(!status) return json({error:'Statut invalide.'},400);
+    const row=await env.JOB_DB.prepare(`SELECT a.candidate_id,j.title FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.id=? AND j.recruiter_id=?`).bind(id,s.user.id).first();
+    if(!row) return json({error:'Candidature introuvable.'},404);
+    await env.JOB_DB.batch([
+      env.JOB_DB.prepare('UPDATE applications SET status=?,updated_at=? WHERE id=?').bind(status,nowISO(),id),
+      env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?,'application','Mise à jour candidature',?)").bind(row.candidate_id,`Votre candidature pour « ${safeText(row.title,120)} » est maintenant : ${status}.`)
+    ]);
+    return json({ok:true,status});
+  }
+  if(/^\/api\/candidate\/recruitment-requests\/\d+\/status$/.test(p)&&m==='POST'){
+    const s=await requireSession(req,env); if(s.user.role!=='candidate') return json({error:'Réservé aux demandeurs d’emploi.'},403);
+    await ensureRecruitmentSchema(env);
+    const id=Number(p.split('/')[4]), b=await req.json().catch(()=>({}));
+    const status=['sent','accepted','declined'].includes(b.status)?b.status:null;
+    if(!status) return json({error:'Statut invalide.'},400);
+    const row=await env.JOB_DB.prepare('SELECT recruiter_id FROM recruitment_requests WHERE id=? AND candidate_id=?').bind(id,s.user.id).first();
+    if(!row) return json({error:'Proposition introuvable.'},404);
+    await env.JOB_DB.batch([
+      env.JOB_DB.prepare('UPDATE recruitment_requests SET status=?,updated_at=? WHERE id=?').bind(status,nowISO(),id),
+      env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?,'recruitment','Réponse du candidat',?)").bind(row.recruiter_id,`Le candidat a répondu à votre proposition : ${status}.`)
+    ]);
+    return json({ok:true,status});
+  }
+  if(/^\/api\/recruiter\/jobs\/\d+\/status$/.test(p)&&m==='POST'){
+    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
+    const id=Number(p.split('/')[4]), b=await req.json().catch(()=>({}));
+    const status=['published','draft','suspended','closed'].includes(b.status)?b.status:null;
+    if(!status) return json({error:'Statut invalide.'},400);
+    const r=await env.JOB_DB.prepare('UPDATE jobs SET status=?,updated_at=? WHERE id=? AND recruiter_id=?').bind(status,nowISO(),id,s.user.id).run();
+    return json({ok:true,status,changed:r.meta?.changes||0});
+  }
+  if(/^\/api\/recruiter\/jobs\/\d+$/.test(p)&&m==='DELETE'){
+    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
+    const id=Number(p.split('/').pop());
+    await env.JOB_DB.prepare('DELETE FROM jobs WHERE id=? AND recruiter_id=?').bind(id,s.user.id).run();
+    return json({ok:true});
+  }
+  if(p==='/api/subscription-history'&&m==='GET'){
+    const s=await requireSession(req,env);
+    if(s.user.role==='super_admin') return json({subscriptions:[],requests:[]});
+    const [subs,reqs]=await Promise.all([
+      env.JOB_DB.prepare('SELECT id,plan,started_at,expires_at,status,created_at FROM subscriptions WHERE user_id=? ORDER BY id DESC LIMIT 50').bind(s.user.id).all(),
+      env.JOB_DB.prepare('SELECT id,plan,amount,payer_phone,transaction_id,status,admin_note,created_at,processed_at FROM subscription_requests WHERE user_id=? ORDER BY id DESC LIMIT 50').bind(s.user.id).all()
+    ]);
+    return json({subscriptions:subs.results||[],requests:reqs.results||[]});
+  }
+  if(p==='/api/notifications/read-all'&&m==='POST'){
+    const s=await requireSession(req,env);
+    await env.JOB_DB.prepare('UPDATE notifications SET is_read=1 WHERE user_id=?').bind(s.user.id).run();
+    return json({ok:true});
+  }
   if(p==='/api/messages'&&m==='GET'){
     const s=await requireSession(req,env); const cid=Number(url.searchParams.get('conversation_id')); const member=await env.JOB_DB.prepare('SELECT 1 FROM conversation_members WHERE conversation_id=? AND user_id=?').bind(cid,s.user.id).first(); if(!member) return json({error:'Accès interdit.'},403); const rows=await env.JOB_DB.prepare('SELECT id,sender_id,content,read_at,created_at FROM messages WHERE conversation_id=? ORDER BY id ASC LIMIT 300').bind(cid).all(); return json({messages:rows.results});
   }
@@ -657,7 +719,19 @@ async function api(req,env,url){
     await env.JOB_DB.prepare('INSERT INTO messages(conversation_id,sender_id,content) VALUES(?,?,?)').bind(cid,s.user.id,content).run(); await env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'message','Nouveau message','Vous avez reçu un nouveau message.')").bind(receiver).run(); return json({ok:true,conversation_id:cid},201);
   }
   if(p==='/api/conversations'&&m==='GET'){
-    const s=await requireSession(req,env); const rows=await env.JOB_DB.prepare(`SELECT c.id,c.updated_at,(SELECT content FROM messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) last_message FROM conversations c JOIN conversation_members cm ON cm.conversation_id=c.id WHERE cm.user_id=? ORDER BY c.updated_at DESC`).bind(s.user.id).all(); return json({conversations:rows.results});
+    const s=await requireSession(req,env);
+    const rows=await env.JOB_DB.prepare(`SELECT c.id,c.updated_at,
+      (SELECT content FROM messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) last_message,
+      ou.id other_user_id,ou.email other_email,ou.role other_role,
+      COALESCE(cp.first_name||' '||cp.last_name,rp.company_name,ou.email) other_name
+      FROM conversations c
+      JOIN conversation_members me ON me.conversation_id=c.id AND me.user_id=?
+      JOIN conversation_members other ON other.conversation_id=c.id AND other.user_id<>?
+      JOIN users ou ON ou.id=other.user_id
+      LEFT JOIN candidate_profiles cp ON cp.user_id=ou.id
+      LEFT JOIN recruiter_profiles rp ON rp.user_id=ou.id
+      ORDER BY c.updated_at DESC`).bind(s.user.id,s.user.id).all();
+    return json({conversations:rows.results||[]});
   }
   if(p==='/api/notifications'&&m==='GET'){ const s=await requireSession(req,env); const rows=await env.JOB_DB.prepare('SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 100').bind(s.user.id).all(); return json({notifications:rows.results}); }
 
@@ -697,6 +771,50 @@ async function api(req,env,url){
     await audit(env,s.user.id,'USER_DELETE','user',userId,{role:target.role});
     await deleteUserAndRelatedData(env,userId);
     return json({ok:true});
+  }
+  if(p==='/api/admin/jobs'&&m==='GET'){
+    await requireAdmin(req,env);
+    const rows=await env.JOB_DB.prepare(`SELECT j.*,u.email recruiter_email,r.company_name,
+      (SELECT COUNT(*) FROM applications a WHERE a.job_id=j.id) application_count
+      FROM jobs j JOIN users u ON u.id=j.recruiter_id LEFT JOIN recruiter_profiles r ON r.user_id=j.recruiter_id
+      ORDER BY j.id DESC LIMIT 500`).all();
+    return json({jobs:rows.results||[]});
+  }
+  if(/^\/api\/admin\/jobs\/\d+$/.test(p)&&m==='DELETE'){
+    const s=await requireAdmin(req,env),id=Number(p.split('/').pop());
+    await audit(env,s.user.id,'ADMIN_JOB_DELETE','job',id);
+    await env.JOB_DB.prepare('DELETE FROM jobs WHERE id=?').bind(id).run();
+    return json({ok:true});
+  }
+  if(p==='/api/admin/applications'&&m==='GET'){
+    await requireAdmin(req,env);
+    const rows=await env.JOB_DB.prepare(`SELECT a.id,a.status,a.created_at,j.title,
+      cu.email candidate_email,ru.email recruiter_email,r.company_name
+      FROM applications a JOIN jobs j ON j.id=a.job_id
+      JOIN users cu ON cu.id=a.candidate_id JOIN users ru ON ru.id=j.recruiter_id
+      LEFT JOIN recruiter_profiles r ON r.user_id=ru.id ORDER BY a.id DESC LIMIT 500`).all();
+    return json({applications:rows.results||[]});
+  }
+  if(p==='/api/admin/audit-logs'&&m==='GET'){
+    await requireAdmin(req,env);
+    const rows=await env.JOB_DB.prepare(`SELECT a.*,u.email actor_email FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_user_id ORDER BY a.id DESC LIMIT 300`).all();
+    return json({logs:rows.results||[]});
+  }
+  if(p==='/api/admin/subscription-history'&&m==='GET'){
+    await requireAdmin(req,env);
+    const rows=await env.JOB_DB.prepare(`SELECT s.*,u.email,u.role FROM subscriptions s JOIN users u ON u.id=s.user_id ORDER BY s.id DESC LIMIT 500`).all();
+    return json({subscriptions:rows.results||[]});
+  }
+  if(/^\/api\/admin\/users\/\d+\/status$/.test(p)&&m==='POST'){
+    const s=await requireAdmin(req,env),id=Number(p.split('/')[4]),b=await req.json().catch(()=>({}));
+    const status=['active','suspended','disabled'].includes(b.status)?b.status:null;
+    if(!status) return json({error:'Statut invalide.'},400);
+    const target=await env.JOB_DB.prepare('SELECT role FROM users WHERE id=?').bind(id).first();
+    if(!target) return json({error:'Compte introuvable.'},404);
+    if(target.role==='super_admin') return json({error:'Le compte Super Admin principal reste actif sans limite et ne peut pas être suspendu ici.'},403);
+    await env.JOB_DB.prepare('UPDATE users SET status=?,session_version=session_version+1,updated_at=? WHERE id=?').bind(status,nowISO(),id).run();
+    await audit(env,s.user.id,'USER_STATUS_CHANGED','user',id,{status});
+    return json({ok:true,status});
   }
   if(p==='/api/admin/users'&&m==='GET'){ await requireAdmin(req,env); const rows=await env.JOB_DB.prepare(`SELECT u.id,u.email,u.phone,u.role,u.status,u.created_at,s.plan,s.expires_at FROM users u LEFT JOIN subscriptions s ON s.id=(SELECT id FROM subscriptions WHERE user_id=u.id ORDER BY datetime(expires_at) DESC LIMIT 1) ORDER BY u.id DESC LIMIT 500`).all(); return json({users:rows.results}); }
   return json({error:'Route API introuvable.'},404);

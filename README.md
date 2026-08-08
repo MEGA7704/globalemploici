@@ -188,3 +188,13 @@ Dans **Variables and Secrets**, créer `SUPER_ADMIN_RECOVERY_TOKEN` comme Secret
 - Le lien visible **Initialiser / Récupérer le Super Admin** a été retiré de la fenêtre de connexion. Les routes sécurisées V12/V13 restent disponibles côté serveur pour maintenance.
 - Les tableaux de bord Demandeur, Recruteur et Super Admin utilisent désormais des métriques dynamiques réelles.
 - Toute l'interface adopte une identité **rose amour** : rose profond, rose poudré, bordeaux rosé, dégradés, ombres douces et nuances.
+
+
+## V15 — Navigation connectée et modules professionnels
+
+- Le membre connecté peut cliquer sur **Accueil** et revenir à la page d’accueil complète sans fermer sa session.
+- Sur ordinateur/tablette, la barre principale utilise deux lignes centrées : identité/compte sur la première, **Accueil + menus du rôle** sur la seconde. Les éléments se répartissent sur plusieurs lignes si nécessaire afin de rester visibles.
+- Le menu Recruteur ne contient plus **Favoris**.
+- Les espaces Demandeur, Recruteur et Super Admin disposent maintenant de modules complets et dynamiques : candidatures, propositions, offres, messages, notifications, paiements, gestion des membres, activations, vérifications, rapports et journal d’audit.
+- Le Super Admin est un compte permanent : aucune date d’expiration, aucun abonnement requis et aucune suppression automatique liée aux règles FREE.
+- Les trois statistiques d’accueil ont un fond rose en dégradé et un texte blanc, et restent alimentées par les données D1 réelles.

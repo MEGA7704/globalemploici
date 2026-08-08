@@ -98,12 +98,43 @@ function closeAccountMenu(){const menu=$('#accountMenu'),btn=$('#accountBtn');if
 function roleLabel(role){return role==='candidate'?'DEMANDEUR D’EMPLOI':role==='recruiter'?'RECRUTEUR':'SUPER ADMIN'}
 function accountItems(role){
   if(role==='recruiter')return [
-    ['dashboard','⌂','Tableau de bord'],['profile','▣','Profil entreprise'],['jobs','＋','Publier une offre'],['myjobs','▤','Mes offres'],['applications','✓','Candidatures reçues'],['candidates','♙','Recherche de candidats'],['favorites','☆','Favoris'],['messages','✉','Messages'],['subscription','◈','Abonnement'],['payments','¤','Paiements'],['settings','⚙','Paramètres']
+    ['dashboard','⌂','Tableau de bord'],
+    ['profile','▣','Profil entreprise'],
+    ['jobs','＋','Publier une offre'],
+    ['myjobs','▤','Mes offres'],
+    ['applications','✓','Candidatures reçues'],
+    ['candidates','♙','Recherche candidats'],
+    ['messages','✉','Messages'],
+    ['notifications','●','Notifications'],
+    ['subscription','◈','Abonnement'],
+    ['payments','¤','Paiements'],
+    ['settings','⚙','Paramètres']
   ];
   if(role==='candidate')return [
-    ['dashboard','⌂','Tableau de bord'],['profile','♙','Mon profil'],['jobs','▣','Offres d’emploi'],['recruitment','★','Propositions reçues'],['candidates','♧','Profils professionnels'],['messages','✉','Messages'],['subscription','◈','Abonnement'],['settings','⚙','Paramètres']
+    ['dashboard','⌂','Tableau de bord'],
+    ['profile','♙','Mon profil'],
+    ['jobs','▣','Offres d’emploi'],
+    ['myapplications','✓','Mes candidatures'],
+    ['recruitment','★','Propositions reçues'],
+    ['candidates','♧','Profils'],
+    ['messages','✉','Messages'],
+    ['notifications','●','Notifications'],
+    ['subscription','◈','Abonnement'],
+    ['payments','¤','Paiements'],
+    ['settings','⚙','Paramètres']
   ];
-  return [['dashboard','⌂','Tableau de bord'],['admin','◆','Administration'],['messages','✉','Messages'],['settings','⚙','Paramètres']];
+  return [
+    ['dashboard','⌂','Tableau de bord'],
+    ['members','♙','Membres'],
+    ['activations','◈','Activations'],
+    ['verifications','✓','Vérifications'],
+    ['jobsadmin','▣','Offres'],
+    ['applicationsadmin','◆','Candidatures'],
+    ['reports','▤','Rapports'],
+    ['logs','⌁','Journal'],
+    ['messages','✉','Messages'],
+    ['settings','⚙','Paramètres']
+  ];
 }
 function buildConnectedTopNav(){
   const box=$('#connectedNavItems');
@@ -170,87 +201,49 @@ function showConnectedHome(){
   $('#loginBtn').classList.add('hidden');$('#registerBtn').classList.add('hidden');$('#accountControl').classList.remove('hidden');
   buildAccountMenu();buildConnectedTopNav();updateSubChip();syncViewNavigation('home');loadPublicStats();
 }
-function updateSubChip(){const s=state.session.subscription;if(!s){$('#subscriptionChip').textContent='Aucun abonnement';return}const d=new Date(s.expires_at).toLocaleDateString('fr-FR');$('#subscriptionChip').textContent=`${s.plan.toUpperCase()} • jusqu'au ${d}`}
+function updateSubChip(){
+  if(state.session?.user?.role==='super_admin'){if($('#subscriptionChip'))$('#subscriptionChip').textContent='SUPER ADMIN • permanent';return}
+  const s=state.session.subscription;if(!s){if($('#subscriptionChip'))$('#subscriptionChip').textContent='Aucun abonnement';return}
+  const d=new Date(s.expires_at).toLocaleDateString('fr-FR');if($('#subscriptionChip'))$('#subscriptionChip').textContent=`${s.plan.toUpperCase()} • jusqu'au ${d}`;
+}
 $('#backHomeBtn')?.addEventListener('click',()=>showPublicHome('home'));
-async function render(view){state.view=view;syncViewNavigation(view);const c=$('#viewContent'),t=$('#viewTitle');const names={dashboard:'Tableau de bord',profile:state.session?.user?.role==='recruiter'?'Profil entreprise':'Mon profil',jobs:"Publier une offre / Offres d'emploi",myjobs:'Mes offres',applications:'Candidatures reçues',recruitment:'Propositions reçues',candidates:'Recherche de candidats',favorites:'Favoris',messages:'Messages',subscription:'Abonnement',payments:'Paiements',settings:'Paramètres',admin:'Administration'};t.textContent=names[view]||view;c.innerHTML='<div class="panel">Chargement…</div>';try{if(view==='dashboard')return renderDashboard();if(view==='profile')return renderProfile();if(view==='jobs')return renderJobs();if(view==='myjobs')return renderMyJobs();if(view==='applications')return renderRecruiterApplications();if(view==='recruitment')return renderRecruitmentRequests();if(view==='candidates')return renderCandidates();if(view==='favorites')return renderFavorites();if(view==='messages')return renderMessages();if(view==='subscription'||view==='payments')return renderSubscription();if(view==='settings')return renderSettings();if(view==='admin')return renderAdmin();}catch(e){c.innerHTML=`<div class="panel"><b>Erreur :</b> ${esc(e.message)}</div>`}}
-
-async function renderDashboard(){
-  const u=state.session.user,s=state.session.subscription;
-  let m={};
-  try{m=await api('/api/dashboard-metrics')}catch{}
-  const plan=s?.plan?.toUpperCase()||'—';
-  const active=s?.effective_status==='active';
-  const expiry=s?.expires_at?new Date(s.expires_at).toLocaleDateString('fr-FR'):'—';
-
-  if(u.role==='candidate'){
-    let c={percent:0,recommendations:[]};try{c=await api('/api/profile/completeness')}catch{}
-    $('#viewContent').innerHTML=`
-      <section class="role-dashboard candidate-dashboard">
-        <div class="dashboard-welcome">
-          <div><span class="section-kicker">ESPACE DEMANDEUR</span><h2>Votre activité GLOBAL EMPLOI</h2><p>Suivez votre profil, vos candidatures et les propositions reçues depuis un seul espace.</p></div>
-          <div class="dashboard-plan"><small>ABONNEMENT</small><strong>${plan}</strong><span>${active?'Actif':'À renouveler'} • ${expiry}</span></div>
-        </div>
-        <div class="dashboard-metrics">
-          <button class="dash-metric go-profile"><span>◔</span><div><small>Profil complété</small><strong>${c.percent}%</strong></div></button>
-          <button class="dash-metric" data-dash-view="jobs"><span>▣</span><div><small>Candidatures envoyées</small><strong>${formatCount(m.applications)}</strong></div></button>
-          <button class="dash-metric" data-dash-view="recruitment"><span>★</span><div><small>Propositions reçues</small><strong>${formatCount(m.recruitment_requests)}</strong></div></button>
-          <button class="dash-metric" data-dash-view="messages"><span>✉</span><div><small>Notifications non lues</small><strong>${formatCount(m.unread)}</strong></div></button>
-        </div>
-        <div class="dashboard-columns">
-          <div class="dashboard-card"><h3>Améliorer mon profil</h3><div class="progress-track"><span style="width:${c.percent}%"></span></div>
-            <div class="recommendations">${c.recommendations.length?c.recommendations.slice(0,4).map(x=>`<button class="recommendation go-profile">+ ${esc(x)}</button>`).join(''):'<p class="muted">Votre profil est bien renseigné.</p>'}</div>
-          </div>
-          <div class="dashboard-card"><h3>Accès rapides</h3><div class="quick-actions">
-            <button data-dash-view="jobs">Voir les offres</button><button data-dash-view="recruitment">Propositions reçues</button><button data-dash-view="messages">Messages</button><button data-dash-view="subscription">Mon abonnement</button>
-          </div></div>
-        </div>
-      </section>`;
-    $$('.go-profile').forEach(b=>b.onclick=()=>navigateView('profile'));
-  }else if(u.role==='recruiter'){
-    let d={completeness:{percent:0,recommendations:[],verification_status:'unverified'}};try{d=await api('/api/profile')}catch{}
-    const c=d.completeness||{percent:0,recommendations:[],verification_status:'unverified'};
-    const verified=c.verification_status==='verified'?'Entreprise vérifiée ✓':c.verification_status==='pending'?'Vérification en cours':'Compte non vérifié';
-    $('#viewContent').innerHTML=`
-      <section class="role-dashboard recruiter-dashboard">
-        <div class="dashboard-welcome">
-          <div><span class="section-kicker">ESPACE RECRUTEUR</span><h2>Pilotez vos recrutements</h2><p>Gérez vos offres, vos candidats et vos échanges professionnels en temps réel.</p></div>
-          <div class="dashboard-plan"><small>ABONNEMENT</small><strong>${plan}</strong><span>${active?'Actif':'À renouveler'} • ${expiry}</span></div>
-        </div>
-        <div class="verification-card ${c.verification_status||'unverified'}"><div><b>${verified}</b><span> • Profil entreprise ${c.percent}% complété</span></div><button class="btn ghost go-profile">Voir mon profil</button></div>
-        <div class="dashboard-metrics">
-          <button class="dash-metric" data-dash-view="myjobs"><span>▤</span><div><small>Offres créées</small><strong>${formatCount(m.jobs)}</strong></div></button>
-          <button class="dash-metric" data-dash-view="myjobs"><span>◉</span><div><small>Offres visibles</small><strong>${formatCount(m.visible_jobs)}</strong></div></button>
-          <button class="dash-metric" data-dash-view="applications"><span>✓</span><div><small>Candidatures reçues</small><strong>${formatCount(m.applications)}</strong></div></button>
-          <button class="dash-metric" data-dash-view="messages"><span>✉</span><div><small>Notifications non lues</small><strong>${formatCount(m.unread)}</strong></div></button>
-        </div>
-        <div class="dashboard-columns">
-          <div class="dashboard-card"><h3>Recrutement</h3><p class="muted">Publiez une offre ou recherchez directement un professionnel.</p><div class="quick-actions"><button data-dash-view="jobs">＋ Publier une offre</button><button data-dash-view="candidates">♙ Rechercher des candidats</button><button data-dash-view="applications">✓ Voir les postulants</button></div></div>
-          <div class="dashboard-card"><h3>Compte entreprise</h3><p><b>${verified}</b></p><p class="muted">${active?'Vos publications peuvent être visibles selon leur statut.':'Vos publications sont actuellement masquées jusqu’au renouvellement.'}</p><button class="btn primary" data-dash-view="subscription">Gérer mon abonnement</button></div>
-        </div>
-      </section>`;
-    $$('.go-profile').forEach(b=>b.onclick=()=>navigateView('profile'));
-  }else{
-    $('#viewContent').innerHTML=`
-      <section class="role-dashboard admin-dashboard-pro">
-        <div class="dashboard-welcome admin-welcome">
-          <div><span class="section-kicker">SUPER ADMIN</span><h2>Centre de pilotage GLOBAL EMPLOI</h2><p>Vue synthétique des membres, abonnements, recrutements et demandes nécessitant une intervention.</p></div>
-          <div class="dashboard-plan"><small>NOUVEAUX MEMBRES</small><strong>+${formatCount(m.new_users_30d)}</strong><span>sur les 30 derniers jours</span></div>
-        </div>
-        <div class="dashboard-metrics admin-metrics">
-          <button class="dash-metric" data-dash-view="admin"><span>♙</span><div><small>Membres</small><strong>${formatCount(m.total_users)}</strong></div></button>
-          <button class="dash-metric" data-dash-view="admin"><span>◈</span><div><small>Comptes payants actifs</small><strong>${formatCount(m.paid)}</strong></div></button>
-          <button class="dash-metric" data-dash-view="admin"><span>○</span><div><small>Comptes FREE</small><strong>${formatCount(m.free)}</strong></div></button>
-          <button class="dash-metric" data-dash-view="admin"><span>▣</span><div><small>Offres enregistrées</small><strong>${formatCount(m.jobs)}</strong></div></button>
-          <button class="dash-metric" data-dash-view="admin"><span>✓</span><div><small>Candidatures</small><strong>${formatCount(m.applications)}</strong></div></button>
-          <button class="dash-metric alert" data-dash-view="admin"><span>!</span><div><small>Activations en attente</small><strong>${formatCount(m.pending_subscriptions)}</strong></div></button>
-        </div>
-        <div class="dashboard-columns admin-columns">
-          <div class="dashboard-card"><h3>Répartition des membres</h3><div class="admin-split"><div><strong>${formatCount(m.candidates)}</strong><span>Demandeurs</span></div><div><strong>${formatCount(m.recruiters)}</strong><span>Recruteurs</span></div><div><strong>${formatCount(m.pending_verifications)}</strong><span>Vérifications en attente</span></div></div></div>
-          <div class="dashboard-card"><h3>Actions administratives</h3><div class="quick-actions"><button data-dash-view="admin">◆ Administration complète</button><button data-dash-view="messages">✉ Messages</button><button data-dash-view="settings">⚙ Sécurité & paramètres</button></div></div>
-        </div>
-      </section>`;
-  }
-  $$('[data-dash-view]').forEach(b=>b.onclick=()=>navigateView(b.dataset.dashView));
+async function render(view){
+  state.view=view;syncViewNavigation(view);
+  const c=$('#viewContent'),t=$('#viewTitle');
+  const names={
+    dashboard:'Tableau de bord',profile:state.session?.user?.role==='recruiter'?'Profil entreprise':'Mon profil',
+    jobs:state.session?.user?.role==='recruiter'?'Publier une offre':"Offres d'emploi",
+    myjobs:'Mes offres',applications:'Candidatures reçues',myapplications:'Mes candidatures',
+    recruitment:'Propositions reçues',candidates:'Profils / Candidats',messages:'Messages',
+    notifications:'Notifications',subscription:'Abonnement',payments:'Paiements',settings:'Paramètres',
+    members:'Gestion des membres',activations:'Activations abonnements',verifications:'Vérifications recruteurs',
+    jobsadmin:'Gestion des offres',applicationsadmin:'Suivi des candidatures',reports:'Rapports & statistiques',
+    logs:'Journal de sécurité'
+  };
+  t.textContent=names[view]||view;c.innerHTML='<div class="panel loading-panel">Chargement des données…</div>';
+  try{
+    if(view==='dashboard')return renderDashboard();
+    if(view==='profile')return renderProfile();
+    if(view==='jobs')return renderJobs();
+    if(view==='myjobs')return renderMyJobs();
+    if(view==='applications')return renderRecruiterApplications();
+    if(view==='myapplications')return renderMyApplications();
+    if(view==='recruitment')return renderRecruitmentRequests();
+    if(view==='candidates')return renderCandidates();
+    if(view==='messages')return renderMessages();
+    if(view==='notifications')return renderNotifications();
+    if(view==='subscription')return renderSubscription();
+    if(view==='payments')return renderPayments();
+    if(view==='settings')return renderSettings();
+    if(view==='members')return renderAdminMembers();
+    if(view==='activations')return renderAdminActivations();
+    if(view==='verifications')return renderAdminVerifications();
+    if(view==='jobsadmin')return renderAdminJobs();
+    if(view==='applicationsadmin')return renderAdminApplications();
+    if(view==='reports')return renderAdminReports();
+    if(view==='logs')return renderAdminLogs();
+    c.innerHTML='<div class="panel">Module indisponible.</div>';
+  }catch(e){c.innerHTML=`<div class="panel error-panel"><b>Erreur :</b> ${esc(e.message)}</div>`}
 }
 async function renderProfile(){const d=await api('/api/profile'),p=d.profile||{};if(state.session.user.role==='super_admin')return $('#viewContent').innerHTML='<div class="panel">Le Super Admin ne possède pas de profil candidat/recruteur.</div>';const candidate=state.session.user.role==='candidate';if(!candidate){
   const docs=d.documents||[],comp=d.completeness||{percent:0,recommendations:[],verification_status:'unverified'};
@@ -368,38 +361,283 @@ function bindRecruiterDocumentUploads(){
   $$('.recruiter-doc-upload').forEach(inp=>inp.onchange=async()=>{const file=inp.files?.[0];if(!file)return;if(file.size>900*1024){toast('Fichier trop volumineux : maximum 900 Ko.');inp.value='';return}const fd=new FormData();fd.append('document_type',inp.dataset.type);fd.append('file',file);try{const r=await fetch('/api/recruiter/documents',{method:'POST',body:fd});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Erreur d’envoi');toast('Document justificatif ajouté.');renderProfile()}catch(e){toast(e.message)}});
   $$('[data-recruiter-doc-delete]').forEach(b=>b.onclick=async()=>{try{await api('/api/recruiter/documents/'+b.dataset.recruiterDocDelete,{method:'DELETE'});toast('Document supprimé.');renderProfile()}catch(e){toast(e.message)}})
 }
-async function renderMyJobs(){if(state.session.user.role!=='recruiter')return renderJobs();const d=await api('/api/recruiter/jobs');$('#viewContent').innerHTML=`<div class="panel"><div class="section-head"><div><h3>Mes offres</h3><p class="muted">${d.jobs.length} offre(s) enregistrée(s).</p></div><button class="btn primary" id="newJobFromMine">Publier une offre</button></div><div class="cards">${d.jobs.map(j=>`<article class="job"><span class="pill">${esc(j.status||'published')}</span><h4>${esc(j.title)}</h4><p>${esc(j.location||'Lieu non précisé')} • ${esc(j.employment_type||'')}</p><small>${new Date(j.created_at).toLocaleDateString('fr-FR')}</small></article>`).join('')||'<p class="muted">Aucune offre publiée.</p>'}</div></div>`;$('#newJobFromMine')?.addEventListener('click',()=>render('jobs'))}
+
+async function renderJobs(){
+  const role=state.session.user.role;
+  if(role==='recruiter'){
+    const paid=hasActivePaidPlan();
+    $('#viewContent').innerHTML=`
+      <div class="module-hero"><div><span class="section-kicker">PUBLICATION</span><h2>Publier une nouvelle offre</h2><p>Créez une offre détaillée pour recevoir des candidatures qualifiées.</p></div><span class="status-badge ${paid?'active':'hidden-status'}">${paid?'Visible après publication':'Masquée en FREE'}</span></div>
+      ${!paid?'<div class="visibility-notice"><b>Compte FREE :</b> votre offre sera bien enregistrée, mais elle restera masquée du public jusqu’à l’activation d’une formule STANDARD ou BUSINESS.</div>':''}
+      <div class="panel professional-form-panel">
+        <form id="jobForm" class="form-grid">
+          <div class="field"><label>Intitulé du poste *</label><input name="title" placeholder="Ex. Comptable, Chauffeur, Responsable commercial" required></div>
+          <div class="field"><label>Métier / profession</label><input name="profession" placeholder="Métier principal"></div>
+          <div class="field"><label>Catégorie</label><input name="category" placeholder="Administration, BTP, Informatique…"></div>
+          <div class="field"><label>Type de contrat</label><select name="employment_type"><option>CDI</option><option>CDD</option><option>Stage</option><option>Intérim</option><option>Freelance</option><option>Temps partiel</option><option>Journalier</option><option>Mission</option></select></div>
+          <div class="field"><label>Ville / lieu *</label><input name="location" placeholder="Abidjan, Bouaké, Diabo…" required></div>
+          <div class="field"><label>Rémunération</label><input name="salary" placeholder="Ex. 150 000 FCFA / mois"></div>
+          <div class="field"><label>Nombre de postes</label><input name="vacancies" type="number" min="1" value="1"></div>
+          <div class="field"><label>Date de début</label><input name="starts_at" type="date"></div>
+          <div class="field"><label>Date limite de candidature</label><input name="closes_at" type="date"></div>
+          <div class="field full"><label>Description complète *</label><textarea name="description" rows="8" placeholder="Missions, responsabilités, compétences attendues, horaires, conditions…" required></textarea></div>
+          <div class="full form-actions"><button class="btn primary" type="submit">Publier l’offre</button><button class="btn outline-blue" type="button" id="viewMyJobs">Voir mes offres</button></div>
+        </form>
+      </div>`;
+    $('#jobForm').onsubmit=async e=>{
+      e.preventDefault();
+      try{
+        await api('/api/jobs',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});
+        toast(paid?'Offre publiée avec succès.':'Offre enregistrée et masquée jusqu’à l’activation de votre abonnement.');
+        e.target.reset();
+        setTimeout(()=>navigateView('myjobs'),350);
+      }catch(err){toast(err.message)}
+    };
+    $('#viewMyJobs').onclick=()=>navigateView('myjobs');
+    return;
+  }
+  if(role==='super_admin') return navigateView('jobsadmin');
+  $('#viewContent').innerHTML=`
+    <div class="module-hero"><div><span class="section-kicker">OPPORTUNITÉS</span><h2>Rechercher une offre d’emploi</h2><p>Consultez les offres actuellement visibles sur GLOBAL EMPLOI.</p></div></div>
+    <div class="market-search compact-search"><div class="field"><label>Emploi / métier</label><input id="memberJobQ" placeholder="Comptable, Chauffeur…"></div><div class="field"><label>Ville</label><input id="memberJobCity" placeholder="Abidjan, Bouaké…"></div><button id="memberJobSearch" class="btn primary">Rechercher</button></div>
+    <div id="memberJobsGrid" class="cards professional-cards"><div class="panel">Chargement…</div></div>`;
+  const load=async()=>{
+    try{
+      const q=$('#memberJobQ').value.trim(),city=$('#memberJobCity').value.trim();
+      const d=await api(`/api/jobs?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}`);
+      $('#memberJobsGrid').innerHTML=d.jobs.length?d.jobs.map(j=>`<article class="job professional-card">
+        <div class="card-topline"><span class="pill">${esc(j.employment_type||'Offre')}</span><span class="plan-mini">${esc((j.plan||'standard').toUpperCase())}</span></div>
+        <h3>${esc(j.title)}</h3><p><b>${esc(j.company_name||'Entreprise')}</b></p>
+        <p class="muted">⌖ ${esc(j.location||'Lieu non précisé')} ${j.salary?' • '+esc(j.salary):''}</p>
+        <p>${esc((j.description||'').slice(0,190))}${(j.description||'').length>190?'…':''}</p>
+        <div class="card-actions"><button class="btn outline-blue member-job-detail" data-id="${j.id}">Voir le détail</button>${hasActivePaidPlan()?`<button class="btn primary member-apply" data-id="${j.id}">Je postule</button>`:'<button class="btn disabled-action" disabled>Je postule — abonnement requis</button>'}</div>
+      </article>`).join(''):'<div class="panel empty-state">Aucune offre ne correspond à cette recherche.</div>';
+      $$('.member-job-detail').forEach(b=>b.onclick=()=>openJobDetail(Number(b.dataset.id)));
+      $$('.member-apply').forEach(b=>b.onclick=()=>applyFromPublic(Number(b.dataset.id)));
+    }catch(err){$('#memberJobsGrid').innerHTML=`<div class="panel error-panel">${esc(err.message)}</div>`}
+  };
+  $('#memberJobSearch').onclick=load;['memberJobQ','memberJobCity'].forEach(id=>$('#'+id).onkeydown=e=>{if(e.key==='Enter')load()});load();
+}
+
+async function renderMyJobs(){
+  if(state.session.user.role!=='recruiter')return renderJobs();
+  const d=await api('/api/recruiter/jobs');
+  const paid=hasActivePaidPlan();
+  $('#viewContent').innerHTML=`
+    <div class="module-hero"><div><span class="section-kicker">MES PUBLICATIONS</span><h2>Mes offres d’emploi</h2><p>Gérez la visibilité, le statut et le suivi de chacune de vos offres.</p></div><button class="btn primary" id="newJobFromMine">＋ Nouvelle offre</button></div>
+    ${!paid?'<div class="visibility-notice"><b>Publications masquées :</b> votre abonnement n’est pas payant actif. Les offres restent conservées et redeviendront visibles après activation.</div>':''}
+    <div class="professional-list">${d.jobs.map(j=>`<article class="manage-card">
+      <div class="manage-main"><div class="card-topline"><span class="pill">${esc(j.status||'published')}</span><small>${new Date(j.created_at).toLocaleDateString('fr-FR')}</small></div><h3>${esc(j.title)}</h3><p>${esc(j.location||'Lieu non précisé')} • ${esc(j.employment_type||'')}</p><p class="muted">${esc((j.description||'').slice(0,160))}</p></div>
+      <div class="manage-actions"><select class="job-status" data-id="${j.id}"><option value="published" ${j.status==='published'?'selected':''}>Publiée</option><option value="draft" ${j.status==='draft'?'selected':''}>Brouillon</option><option value="suspended" ${j.status==='suspended'?'selected':''}>Suspendue</option><option value="closed" ${j.status==='closed'?'selected':''}>Clôturée</option></select><button class="btn danger delete-job" data-id="${j.id}">Supprimer</button></div>
+    </article>`).join('')||'<div class="panel empty-state">Vous n’avez encore créé aucune offre.</div>'}</div>`;
+  $('#newJobFromMine').onclick=()=>navigateView('jobs');
+  $$('.job-status').forEach(s=>s.onchange=async()=>{try{await api(`/api/recruiter/jobs/${s.dataset.id}/status`,{method:'POST',body:JSON.stringify({status:s.value})});toast('Statut de l’offre mis à jour.')}catch(err){toast(err.message)}});
+  $$('.delete-job').forEach(b=>b.onclick=async()=>{if(!confirm('Supprimer définitivement cette offre et ses candidatures ?'))return;try{await api(`/api/recruiter/jobs/${b.dataset.id}`,{method:'DELETE'});toast('Offre supprimée.');renderMyJobs()}catch(err){toast(err.message)}});
+}
 async function renderRecruiterApplications(){
   if(state.session.user.role!=='recruiter')return $('#viewContent').innerHTML='<div class="panel">Section réservée aux recruteurs.</div>';
   const d=await api('/api/recruiter/applications');
-  $('#viewContent').innerHTML=`<div class="panel"><div class="section-head"><div><span class="section-kicker">LISTE SPÉCIALE</span><h3>Postulants à mes offres</h3><p>${d.applications.length} candidature${d.applications.length>1?'s':''} reçue${d.applications.length>1?'s':''}.</p></div></div>
-  <div class="application-cards">${d.applications.map(a=>`<article class="application-card">
-    <div><span class="pill">${esc(a.status||'submitted')}</span><h4>${esc(((a.first_name||'')+' '+(a.last_name||'')).trim()||a.email)}</h4><p><b>${esc(a.professional_title||a.profession||'Candidat')}</b> • ${esc(a.city||a.country||'')}</p></div>
-    <div class="application-info"><span><small>Offre</small>${esc(a.title)}</span><span><small>Téléphone</small>${esc(a.phone||'—')}</span><span><small>E-mail</small>${esc(a.email||'—')}</span><span><small>Expérience</small>${esc(a.experience_level||a.experience_years||'—')}</span></div>
-    <p>${esc((a.skills||a.description||'').slice(0,220))}</p>
-    ${a.message?`<div class="application-message"><b>Message du candidat :</b> ${esc(a.message)}</div>`:''}
-    <div class="application-actions"><button class="btn outline-blue applicant-detail" data-id="${a.id}">Voir les informations</button><button class="btn primary message-user" data-id="${a.candidate_id}">Envoyer un message</button></div>
-  </article>`).join('')||'<div class="empty-state">Aucune candidature reçue pour le moment.</div>'}</div></div>`;
+  const groups={submitted:0,reviewing:0,accepted:0,rejected:0};d.applications.forEach(a=>groups[a.status]=(groups[a.status]||0)+1);
+  $('#viewContent').innerHTML=`
+    <div class="module-hero"><div><span class="section-kicker">CANDIDATURES</span><h2>Postulants à mes offres</h2><p>Analysez les profils et suivez chaque candidature jusqu’à la décision finale.</p></div></div>
+    <div class="mini-metrics"><div><strong>${formatCount(d.applications.length)}</strong><span>Total</span></div><div><strong>${formatCount(groups.submitted)}</strong><span>Nouvelles</span></div><div><strong>${formatCount(groups.reviewing)}</strong><span>À l’étude</span></div><div><strong>${formatCount(groups.accepted)}</strong><span>Acceptées</span></div></div>
+    <div class="application-cards">${d.applications.map(a=>`<article class="application-card">
+      <div class="card-topline"><span class="pill status-${esc(a.status)}">${esc(a.status||'submitted')}</span><small>${new Date(a.created_at).toLocaleString('fr-FR')}</small></div>
+      <h3>${esc(((a.first_name||'')+' '+(a.last_name||'')).trim()||a.email)}</h3><p><b>${esc(a.professional_title||a.profession||'Candidat')}</b> • ${esc(a.city||a.country||'')}</p>
+      <div class="application-info"><span><small>Offre</small>${esc(a.title)}</span><span><small>Téléphone</small>${esc(a.phone||'—')}</span><span><small>E-mail</small>${esc(a.email||'—')}</span><span><small>Expérience</small>${esc(a.experience_level||a.experience_years||'—')}</span></div>
+      <p>${esc((a.skills||a.description||'').slice(0,240))}</p>
+      ${a.message?`<div class="application-message"><b>Message :</b> ${esc(a.message)}</div>`:''}
+      <div class="application-actions">
+        <button class="btn outline-blue applicant-detail" data-id="${a.id}">Voir le profil</button>
+        <button class="btn ghost message-user" data-id="${a.candidate_id}">Message</button>
+        <select class="application-status" data-id="${a.id}"><option value="submitted" ${a.status==='submitted'?'selected':''}>Nouvelle</option><option value="reviewing" ${a.status==='reviewing'?'selected':''}>À l’étude</option><option value="accepted" ${a.status==='accepted'?'selected':''}>Acceptée</option><option value="rejected" ${a.status==='rejected'?'selected':''}>Refusée</option></select>
+      </div>
+    </article>`).join('')||'<div class="empty-state panel">Aucune candidature reçue pour le moment.</div>'}</div>`;
   const byId=new Map(d.applications.map(a=>[String(a.id),a]));
-  $$('.applicant-detail').forEach(b=>b.onclick=()=>{const a=byId.get(b.dataset.id);modal(`<h2>${esc(((a.first_name||'')+' '+(a.last_name||'')).trim()||a.email)}</h2><div class="detail-grid"><div><small>Poste / profil</small><strong>${esc(a.professional_title||a.profession||'—')}</strong></div><div><small>Ville</small><strong>${esc(a.city||a.country||'—')}</strong></div><div><small>Téléphone</small><strong>${esc(a.phone||'—')}</strong></div><div><small>E-mail</small><strong>${esc(a.email||'—')}</strong></div><div><small>Expérience</small><strong>${esc(a.experience_level||a.experience_years||'—')}</strong></div><div><small>Disponibilité</small><strong>${esc(a.availability||'—')}</strong></div></div><div class="detail-section"><h3>Compétences</h3><p>${esc(a.skills||'—')}</p></div><div class="detail-section"><h3>Poste recherché</h3><p>${esc(a.target_position||'—')} • ${esc(a.desired_contracts||'')}</p></div><div class="detail-actions"><button class="btn primary modal-message" data-id="${a.candidate_id}">Envoyer un message</button></div>`);$('.modal-message')?.addEventListener('click',()=>{closeModal();messageModal(Number(a.candidate_id))})});
+  $$('.applicant-detail').forEach(b=>b.onclick=()=>{const a=byId.get(b.dataset.id);modal(`<h2>${esc(((a.first_name||'')+' '+(a.last_name||'')).trim()||a.email)}</h2><div class="detail-grid"><div><small>Profil</small><strong>${esc(a.professional_title||a.profession||'—')}</strong></div><div><small>Ville</small><strong>${esc(a.city||a.country||'—')}</strong></div><div><small>Téléphone</small><strong>${esc(a.phone||'—')}</strong></div><div><small>E-mail</small><strong>${esc(a.email||'—')}</strong></div><div><small>Expérience</small><strong>${esc(a.experience_level||a.experience_years||'—')}</strong></div><div><small>Disponibilité</small><strong>${esc(a.availability||'—')}</strong></div></div><div class="detail-section"><h3>Compétences</h3><p>${esc(a.skills||'—')}</p></div><div class="detail-section"><h3>Recherche</h3><p>${esc(a.target_position||'—')} • ${esc(a.desired_contracts||'')}</p></div><div class="detail-actions"><button class="btn primary modal-message" data-id="${a.candidate_id}">Envoyer un message</button></div>`);$('.modal-message').onclick=()=>{closeModal();messageModal(Number(a.candidate_id))}});
   $$('.message-user').forEach(b=>b.onclick=()=>messageModal(Number(b.dataset.id)));
+  $$('.application-status').forEach(s=>s.onchange=async()=>{try{await api(`/api/recruiter/applications/${s.dataset.id}/status`,{method:'POST',body:JSON.stringify({status:s.value})});toast('Statut de candidature mis à jour.');renderRecruiterApplications()}catch(err){toast(err.message)}});
+}
+
+async function renderMyApplications(){
+  if(state.session.user.role!=='candidate')return $('#viewContent').innerHTML='<div class="panel">Section réservée aux demandeurs d’emploi.</div>';
+  const d=await api('/api/candidate/applications');
+  $('#viewContent').innerHTML=`
+    <div class="module-hero"><div><span class="section-kicker">SUIVI</span><h2>Mes candidatures</h2><p>Retrouvez toutes les offres auxquelles vous avez postulé et leur état d’avancement.</p></div></div>
+    <div class="professional-list">${d.applications.map(a=>`<article class="manage-card">
+      <div><div class="card-topline"><span class="pill status-${esc(a.status)}">${esc(a.status)}</span><small>${new Date(a.created_at).toLocaleDateString('fr-FR')}</small></div><h3>${esc(a.title)}</h3><p><b>${esc(a.company_name||'Entreprise')}</b> • ${esc(a.location||'')}</p><p class="muted">${esc(a.employment_type||'')} ${a.salary?'• '+esc(a.salary):''}</p></div>
+      <div class="manage-actions"><button class="btn outline-blue myapp-detail" data-id="${a.job_id}">Voir l’offre</button></div>
+    </article>`).join('')||'<div class="panel empty-state">Vous n’avez encore envoyé aucune candidature.</div>'}</div>`;
+  $$('.myapp-detail').forEach(b=>b.onclick=()=>openJobDetail(Number(b.dataset.id)));
 }
 
 async function renderRecruitmentRequests(){
   if(state.session.user.role!=='candidate')return $('#viewContent').innerHTML='<div class="panel">Section réservée aux demandeurs d’emploi.</div>';
   const d=await api('/api/candidate/recruitment-requests');
-  $('#viewContent').innerHTML=`<div class="panel"><h3>Propositions de recrutement reçues</h3><p class="muted">Les recruteurs qui cliquent sur « Je recrute » apparaissent ici.</p>
-    <div class="application-cards">${d.requests.map(r=>`<article class="application-card"><div><span class="pill">${esc(r.status||'sent')}</span><h4>${esc(r.company_name||r.trade_name||'Recruteur GLOBAL EMPLOI')}</h4><p>${esc(r.job_title||r.email||'Recruteur')}</p></div>${r.message?`<div class="application-message">${esc(r.message)}</div>`:''}<div class="application-actions"><button class="btn primary message-user" data-id="${r.recruiter_id}">Répondre par message</button></div></article>`).join('')||'<div class="empty-state">Aucune proposition reçue pour le moment.</div>'}</div>
-  </div>`;
+  $('#viewContent').innerHTML=`
+    <div class="module-hero"><div><span class="section-kicker">PROPOSITIONS</span><h2>Propositions de recrutement</h2><p>Consultez les recruteurs intéressés par votre profil et répondez directement.</p></div></div>
+    <div class="application-cards">${d.requests.map(r=>`<article class="application-card">
+      <div class="card-topline"><span class="pill status-${esc(r.status)}">${esc(r.status||'sent')}</span><small>${new Date(r.created_at).toLocaleString('fr-FR')}</small></div>
+      <h3>${esc(r.company_name||r.trade_name||'Recruteur GLOBAL EMPLOI')}</h3><p>${esc(r.job_title||r.email||'Recruteur')}</p>
+      ${r.message?`<div class="application-message">${esc(r.message)}</div>`:''}
+      <div class="application-actions">
+        <button class="btn ghost message-user" data-id="${r.recruiter_id}">Message</button>
+        ${r.status==='sent'?`<button class="btn primary rr-action" data-id="${r.id}" data-status="accepted">Accepter</button><button class="btn danger rr-action" data-id="${r.id}" data-status="declined">Décliner</button>`:''}
+      </div>
+    </article>`).join('')||'<div class="panel empty-state">Aucune proposition reçue pour le moment.</div>'}</div>`;
   $$('.message-user').forEach(b=>b.onclick=()=>messageModal(Number(b.dataset.id)));
+  $$('.rr-action').forEach(b=>b.onclick=async()=>{try{await api(`/api/candidate/recruitment-requests/${b.dataset.id}/status`,{method:'POST',body:JSON.stringify({status:b.dataset.status})});toast('Votre réponse a été enregistrée.');renderRecruitmentRequests()}catch(err){toast(err.message)}});
 }
 
-async function renderCandidates(){const d=await api('/api/candidates');$('#viewContent').innerHTML=`<div class="cards">${d.candidates.length?d.candidates.map(p=>`<article class="person"><span class="pill">${esc(p.availability||'Profil')}</span><h4>${esc(`${p.first_name||''} ${p.last_name||''}`.trim()||'Professionnel')}</h4><p><b>${esc(p.profession||'Métier non précisé')}</b><br>${esc(p.specialty||'')} ${p.city?'• '+esc(p.city):''}</p><p>${esc((p.skills||'').slice(0,150))}</p>${state.session.user.role==='recruiter'?`<button class="btn primary message-user" data-id="${p.id}">Message</button>`:''}</article>`).join(''):'<div class="panel">Aucun profil disponible.</div>'}</div>`;$$('.message-user').forEach(b=>b.onclick=()=>messageModal(Number(b.dataset.id)))}
+async function renderCandidates(){
+  const role=state.session.user.role;
+  $('#viewContent').innerHTML=`
+    <div class="module-hero"><div><span class="section-kicker">TALENTS</span><h2>Profils professionnels</h2><p>Recherchez les profils actuellement visibles selon leur métier et leur ville.</p></div></div>
+    <div class="market-search compact-search"><div class="field"><label>Métier / compétence</label><input id="memberCandQ" placeholder="Comptable, Maçon, Chauffeur…"></div><div class="field"><label>Ville</label><input id="memberCandCity" placeholder="Abidjan, Bouaké…"></div><button id="memberCandSearch" class="btn primary">Rechercher</button></div>
+    <div id="memberCandGrid" class="candidate-market-grid"><div class="panel">Chargement…</div></div>`;
+  const load=async()=>{
+    try{
+      const q=$('#memberCandQ').value.trim(),city=$('#memberCandCity').value.trim();
+      const d=await api(`/api/candidates?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}`);
+      $('#memberCandGrid').innerHTML=d.candidates.length?d.candidates.map(c=>`<article class="candidate-market-card professional-card">
+        <div class="candidate-photo">${c.photo?`<img src="${esc(c.photo)}" alt="">`:`<span>${esc(((c.first_name||'P')[0]||'P')+((c.last_name||'')[0]||''))}</span>`}</div>
+        <div class="candidate-body"><div class="card-topline"><span class="pill">${esc(c.availability||'Profil')}</span><span class="plan-mini">${esc((c.plan||'standard').toUpperCase())}</span></div><h3>${esc(`${c.first_name||''} ${c.last_name||''}`.trim()||'Professionnel')}</h3><strong>${esc(c.professional_title||c.profession||'Profil professionnel')}</strong><p class="muted">⌖ ${esc(c.city||c.country||'Localisation non précisée')}</p><p>${esc((c.skills||c.specialty||'').slice(0,150))}</p></div>
+        <div class="candidate-card-footer"><button class="btn outline-blue cand-detail" data-id="${c.id}">Voir profil</button>${role==='recruiter'?(hasActivePaidPlan()?`<button class="btn primary cand-recruit" data-id="${c.id}">Je recrute</button>`:'<button class="btn disabled-action" disabled>Je recrute — abonnement requis</button>'):''}</div>
+      </article>`).join(''):'<div class="panel empty-state">Aucun profil ne correspond à cette recherche.</div>';
+      $$('.cand-detail').forEach(b=>b.onclick=()=>openCandidateDetail(Number(b.dataset.id)));
+      $$('.cand-recruit').forEach(b=>b.onclick=()=>recruitFromPublic(Number(b.dataset.id)));
+    }catch(err){$('#memberCandGrid').innerHTML=`<div class="panel error-panel">${esc(err.message)}</div>`}
+  };
+  $('#memberCandSearch').onclick=load;['memberCandQ','memberCandCity'].forEach(id=>$('#'+id).onkeydown=e=>{if(e.key==='Enter')load()});load();
+}
 function messageModal(receiver){modal(`<h2>Envoyer un message</h2><form id="messageForm"><div class="field"><label>Message</label><textarea name="content" required></textarea></div><br><button class="btn primary">Envoyer</button></form>`);$('#messageForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/messages',{method:'POST',body:JSON.stringify({receiver_id:receiver,content:new FormData(e.target).get('content')})});closeModal();toast('Message envoyé')}catch(err){toast(err.message)}}}
-async function renderMessages(){const d=await api('/api/conversations');$('#viewContent').innerHTML=`<div class="panel"><h3>Conversations</h3>${d.conversations.length?d.conversations.map(x=>`<div class="card" style="margin:10px 0"><b>Conversation #${x.id}</b><p class="muted">${esc(x.last_message||'Aucun message')}</p><button class="btn ghost open-conv" data-id="${x.id}">Ouvrir</button></div>`).join(''):'<p class="muted">Aucune conversation.</p>'}</div>`;$$('.open-conv').forEach(b=>b.onclick=async()=>{const m=await api(`/api/messages?conversation_id=${b.dataset.id}`);modal(`<h2>Conversation #${b.dataset.id}</h2><div>${m.messages.map(x=>`<div class="card" style="margin:8px 0"><small>${x.sender_id===state.session.user.id?'Moi':'Correspondant'} • ${new Date(x.created_at).toLocaleString('fr-FR')}</small><p>${esc(x.content)}</p></div>`).join('')}</div>`)});}
+async function renderMessages(){
+  const d=await api('/api/conversations');
+  $('#viewContent').innerHTML=`
+    <div class="module-hero"><div><span class="section-kicker">MESSAGERIE</span><h2>Mes conversations</h2><p>Échangez directement avec les candidats et recruteurs depuis GLOBAL EMPLOI.</p></div></div>
+    <div class="conversation-list">${d.conversations.map(x=>`<button class="conversation-row open-conv" data-id="${x.id}" data-other="${x.other_user_id||''}">
+      <div class="conversation-avatar">${esc((x.other_name||x.other_email||'GE').slice(0,2).toUpperCase())}</div>
+      <div class="conversation-copy"><strong>${esc(x.other_name||x.other_email||'Correspondant')}</strong><small>${esc(x.other_role||'')}</small><p>${esc(x.last_message||'Aucun message')}</p></div>
+      <span>→</span>
+    </button>`).join('')||'<div class="panel empty-state">Aucune conversation pour le moment.</div>'}</div>`;
+  $$('.open-conv').forEach(b=>b.onclick=async()=>{
+    try{
+      const m=await api(`/api/messages?conversation_id=${b.dataset.id}`);
+      const receiver=Number(b.dataset.other);
+      modal(`<div class="conversation-modal"><h2>Conversation</h2><div class="message-thread">${m.messages.map(x=>`<div class="chat-message ${x.sender_id===state.session.user.id?'mine':'theirs'}"><small>${x.sender_id===state.session.user.id?'Moi':'Correspondant'} • ${new Date(x.created_at).toLocaleString('fr-FR')}</small><p>${esc(x.content)}</p></div>`).join('')}</div>${receiver?`<form id="replyForm" class="reply-form"><textarea name="content" placeholder="Écrire un message…" required></textarea><button class="btn primary">Envoyer</button></form>`:''}</div>`);
+      if(receiver)$('#replyForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/messages',{method:'POST',body:JSON.stringify({receiver_id:receiver,content:new FormData(e.target).get('content')})});closeModal();toast('Message envoyé.');renderMessages()}catch(err){toast(err.message)}};
+    }catch(err){toast(err.message)}
+  });
+}
 
-function renderSubscription(){const s=state.session.subscription;$('#viewContent').innerHTML=`<div class="plans"><div class="plan"><h3>FREE</h3><div class="price">0 F</div><p>7 jours</p><small class="free-warning">Consultation uniquement : impossible de postuler ou recruter. Sans activation STANDARD/BUSINESS avant la fin des 7 jours, le compte FREE est automatiquement supprimé.</small></div><div class="plan featured"><h3>STANDARD</h3><div class="price">1 000 F</div><p>30 jours</p><a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=1000" target="_blank" rel="noopener">Payer avec Wave</a></div><div class="plan"><h3>BUSINESS</h3><div class="price">10 000 F</div><p>365 jours</p><a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=10000" target="_blank" rel="noopener">Payer avec Wave</a></div></div><div class="panel" style="margin-top:18px"><h3>Mon abonnement actuel</h3><p><b>${s?.plan?.toUpperCase()||'Aucun'}</b> • expiration : ${s?new Date(s.expires_at).toLocaleString('fr-FR'):'—'}</p><button id="activateBtn" class="btn primary">Activer mon abonnement</button></div>`;$('#activateBtn').onclick=activationModal}
+async function renderNotifications(){
+  const d=await api('/api/notifications');
+  const unread=d.notifications.filter(n=>!n.is_read).length;
+  $('#viewContent').innerHTML=`
+    <div class="module-hero"><div><span class="section-kicker">CENTRE D’ALERTES</span><h2>Notifications</h2><p>${unread} notification${unread>1?'s':''} non lue${unread>1?'s':''}.</p></div>${unread?'<button id="markAllRead" class="btn primary">Tout marquer comme lu</button>':''}</div>
+    <div class="notification-list">${d.notifications.map(n=>`<article class="notification-card ${n.is_read?'read':'unread'}"><span class="notification-dot"></span><div><div class="card-topline"><strong>${esc(n.title)}</strong><small>${new Date(n.created_at).toLocaleString('fr-FR')}</small></div><p>${esc(n.content)}</p><small class="pill">${esc(n.type)}</small></div></article>`).join('')||'<div class="panel empty-state">Aucune notification.</div>'}</div>`;
+  $('#markAllRead')?.addEventListener('click',async()=>{try{await api('/api/notifications/read-all',{method:'POST'});toast('Notifications marquées comme lues.');renderNotifications()}catch(err){toast(err.message)}});
+}
+
+function renderSubscription(){
+  if(state.session.user.role==='super_admin'){
+    $('#viewContent').innerHTML=`<div class="module-hero admin-permanent"><div><span class="section-kicker">SUPER ADMIN</span><h2>Compte administrateur permanent</h2><p>Ce compte n’est soumis à aucune durée d’abonnement et reste actif sans date d’expiration.</p></div><span class="status-badge active">ACTIF SANS FIN</span></div>`;
+    return;
+  }
+  const s=state.session.subscription;
+  const current=s?.plan?.toUpperCase()||'AUCUN', active=s?.effective_status==='active';
+  $('#viewContent').innerHTML=`
+    <div class="module-hero"><div><span class="section-kicker">ABONNEMENT</span><h2>Choisissez votre niveau d’accès</h2><p>Votre formule détermine la visibilité de vos publications et l’accès aux actions de recrutement.</p></div><div class="dashboard-plan light-plan"><small>FORMULE ACTUELLE</small><strong>${current}</strong><span>${active?'Active':'Expirée'} ${s?.expires_at?'• '+new Date(s.expires_at).toLocaleDateString('fr-FR'):''}</span></div></div>
+    <div class="plans professional-plans">
+      <div class="plan"><h3>FREE</h3><div class="price">0 F</div><p>7 jours</p><ul><li>✓ Consultation des contenus</li><li>✓ Préparation du profil/publications</li><li>✕ Je postule / Je recrute</li><li>✕ Publications publiques</li></ul><small class="free-warning">Sans activation payante à la fin du délai FREE, le compte est supprimé automatiquement.</small></div>
+      <div class="plan featured"><h3>STANDARD</h3><div class="price">1 000 F</div><p>30 jours</p><ul><li>✓ Publications visibles</li><li>✓ Je postule / Je recrute</li><li>✓ Messagerie et suivi</li></ul><a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=1000" target="_blank" rel="noopener">Payer 1 000 F avec Wave</a></div>
+      <div class="plan"><h3>BUSINESS</h3><div class="price">10 000 F</div><p>365 jours</p><ul><li>✓ Accès complet</li><li>✓ Visibilité longue durée</li><li>✓ Toutes les fonctions professionnelles</li></ul><a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=10000" target="_blank" rel="noopener">Payer 10 000 F avec Wave</a></div>
+    </div>
+    <div class="panel subscription-current"><div><h3>Activation après paiement</h3><p class="muted">Après votre paiement Wave, transmettez le numéro utilisé et l’ID de transaction au support.</p></div><button id="activateBtn" class="btn primary">Activer mon abonnement</button></div>`;
+  $('#activateBtn').onclick=activationModal;
+}
 function activationModal(){modal(`<h2>Activer mon abonnement</h2><form id="activationForm" class="form-grid"><div class="field full"><label>Version achetée</label><select name="plan"><option value="standard">STANDARD — 1 000 FCFA</option><option value="business">BUSINESS — 10 000 FCFA</option></select></div><div class="field"><label>N° téléphone ayant payé</label><input name="payer_phone" required></div><div class="field"><label>ID de transaction</label><input name="transaction_id" required></div><div class="full" style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" id="waSend" class="btn ghost">Envoyer par WhatsApp</button><button class="btn primary">Envoyer au Support</button></div></form>`);$('#waSend').onclick=()=>{const f=new FormData($('#activationForm')),plan=f.get('plan'),amount=plan==='business'?10000:1000;const txt=`Demande d'activation GLOBAL EMPLOI\nCompte : ${state.session.user.email}\nType : ${state.session.user.role}\nFormule : ${plan}\nMontant : ${amount} FCFA\nTéléphone paiement : ${f.get('payer_phone')||''}\nID transaction : ${f.get('transaction_id')||''}`;window.open(`https://wa.me/2250777041790?text=${encodeURIComponent(txt)}`,'_blank')};$('#activationForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/subscription-request',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});closeModal();toast('Demande envoyée au support')}catch(err){toast(err.message)}}}
+
+
+async function renderPayments(){
+  if(state.session.user.role==='super_admin')return renderAdminReports();
+  const d=await api('/api/subscription-history');
+  $('#viewContent').innerHTML=`
+    <div class="module-hero"><div><span class="section-kicker">PAIEMENTS</span><h2>Historique des abonnements</h2><p>Suivez les formules activées et toutes vos demandes de validation de paiement.</p></div></div>
+    <div class="dashboard-columns">
+      <div class="panel"><h3>Formules enregistrées</h3><div class="table-wrap"><table class="table"><thead><tr><th>Formule</th><th>Début</th><th>Expiration</th><th>Statut</th></tr></thead><tbody>${d.subscriptions.map(x=>`<tr><td><b>${esc(x.plan.toUpperCase())}</b></td><td>${new Date(x.started_at).toLocaleDateString('fr-FR')}</td><td>${new Date(x.expires_at).toLocaleDateString('fr-FR')}</td><td><span class="pill">${esc(x.status)}</span></td></tr>`).join('')||'<tr><td colspan="4">Aucun abonnement.</td></tr>'}</tbody></table></div></div>
+      <div class="panel"><h3>Demandes d’activation</h3><div class="payment-history">${d.requests.map(x=>`<article class="payment-record"><div class="card-topline"><b>${esc(x.plan.toUpperCase())} — ${formatCount(x.amount)} F</b><span class="pill">${esc(x.status)}</span></div><p>Téléphone : ${esc(x.payer_phone)}<br>ID transaction : ${esc(x.transaction_id)}</p><small>Demandé le ${new Date(x.created_at).toLocaleString('fr-FR')}${x.processed_at?' • traité le '+new Date(x.processed_at).toLocaleString('fr-FR'):''}</small>${x.admin_note?`<p class="muted">${esc(x.admin_note)}</p>`:''}</article>`).join('')||'<p class="muted">Aucune demande envoyée.</p>'}</div></div>
+    </div>`;
+}
+
+function renderSettings(){
+  const admin=state.session.user.role==='super_admin';
+  $('#viewContent').innerHTML=`
+    <div class="module-hero"><div><span class="section-kicker">SÉCURITÉ</span><h2>Paramètres du compte</h2><p>Gérez votre mot de passe et les options sensibles de votre compte.</p></div>${admin?'<span class="status-badge active">SUPER ADMIN PERMANENT</span>':''}</div>
+    <div class="panel"><h3>Changer le mot de passe</h3><form id="passwordForm" class="form-grid">
+      <div class="field"><label>Mot de passe actuel</label><div class="password-wrap"><input id="oldPassword" name="old_password" type="password" required><button class="password-toggle" type="button" data-toggle-password="oldPassword">◉</button></div></div>
+      <div class="field"><label>Nouveau mot de passe</label><div class="password-wrap"><input id="newPassword" name="new_password" type="password" minlength="8" required><button class="password-toggle" type="button" data-toggle-password="newPassword">◉</button></div></div>
+      <div class="full"><button class="btn primary">Mettre à jour le mot de passe</button></div>
+    </form></div>
+    ${admin?`<div class="panel permanent-admin-card"><h3>Compte administrateur principal</h3><p>Le Super Admin est le gérant permanent de tous les membres inscrits. Il n’a aucune date d’expiration et n’est jamais concerné par la suppression automatique des comptes FREE.</p></div>`:`<div class="panel danger-zone"><h3>Supprimer mon compte</h3><p class="muted">Cette opération supprime définitivement votre profil, vos publications, candidatures, messages associés et données liées.</p><button id="deleteMyAccount" class="btn danger">Supprimer définitivement mon compte</button></div>`}`;
+  bindPasswordToggles();
+  $('#passwordForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/change-password',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Mot de passe modifié. Vous devez vous reconnecter.');setTimeout(()=>location.reload(),900)}catch(err){toast(err.message)}};
+  $('#deleteMyAccount')?.addEventListener('click',async()=>{if(!confirm('Supprimer définitivement votre compte GLOBAL EMPLOI ?'))return;try{await api('/api/account',{method:'DELETE'});location.reload()}catch(err){toast(err.message)}});
+}
+
+async function renderAdminMembers(){
+  if(state.session.user.role!=='super_admin')throw new Error('Accès interdit');
+  const d=await api('/api/admin/users');
+  $('#viewContent').innerHTML=`
+    <div class="module-hero"><div><span class="section-kicker">GESTION CENTRALE</span><h2>Membres inscrits</h2><p>Recherchez, contrôlez, suspendre ou réactiver les comptes de la plateforme.</p></div><div class="dashboard-plan light-plan"><small>TOTAL</small><strong>${formatCount(d.users.filter(x=>x.role!=='super_admin').length)}</strong><span>membres gérés</span></div></div>
+    <div class="market-search admin-filter"><div class="field"><label>Recherche</label><input id="adminMemberSearch" placeholder="E-mail, téléphone, rôle…"></div><div class="field"><label>Rôle</label><select id="adminMemberRole"><option value="">Tous</option><option value="candidate">Demandeurs</option><option value="recruiter">Recruteurs</option></select></div><button id="adminMemberFilterBtn" class="btn primary">Filtrer</button></div>
+    <div id="adminMembersTable"></div>`;
+  const draw=()=>{
+    const q=$('#adminMemberSearch').value.toLowerCase().trim(),role=$('#adminMemberRole').value;
+    const rows=d.users.filter(x=>x.role!=='super_admin'&&(!role||x.role===role)&&(!q||`${x.email} ${x.phone||''} ${x.role}`.toLowerCase().includes(q)));
+    $('#adminMembersTable').innerHTML=`<div class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Membre</th><th>Rôle</th><th>Statut</th><th>Formule</th><th>Expiration</th><th>Actions</th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.email)}</b><br><small>${esc(x.phone||'')}</small></td><td>${x.role==='candidate'?'Demandeur':'Recruteur'}</td><td><span class="pill">${esc(x.status)}</span></td><td>${esc((x.plan||'—').toUpperCase())}</td><td>${x.expires_at?new Date(x.expires_at).toLocaleDateString('fr-FR'):'—'}</td><td><select class="admin-user-status" data-id="${x.id}"><option value="active" ${x.status==='active'?'selected':''}>Actif</option><option value="suspended" ${x.status==='suspended'?'selected':''}>Suspendu</option><option value="disabled" ${x.status==='disabled'?'selected':''}>Désactivé</option></select> <button class="btn danger admin-delete-user" data-id="${x.id}" data-email="${esc(x.email)}">Supprimer</button></td></tr>`).join('')||'<tr><td colspan="6">Aucun résultat.</td></tr>'}</tbody></table></div></div>`;
+    $$('.admin-user-status').forEach(s=>s.onchange=async()=>{try{await api(`/api/admin/users/${s.dataset.id}/status`,{method:'POST',body:JSON.stringify({status:s.value})});toast('Statut du membre mis à jour.')}catch(err){toast(err.message)}});
+    $$('.admin-delete-user').forEach(b=>b.onclick=()=>adminDeleteUser(b.dataset.id,b.dataset.email));
+  };
+  $('#adminMemberFilterBtn').onclick=draw;$('#adminMemberSearch').oninput=draw;$('#adminMemberRole').onchange=draw;draw();
+}
+
+async function renderAdminActivations(){
+  const d=await api('/api/admin/subscription-requests');
+  $('#viewContent').innerHTML=`<div class="module-hero"><div><span class="section-kicker">ABONNEMENTS</span><h2>Demandes d’activation</h2><p>Validez les paiements transmis par les membres.</p></div><span class="status-badge">${formatCount(d.requests.length)} en attente</span></div><div class="application-cards">${d.requests.map(x=>`<article class="application-card"><div class="card-topline"><b>${esc(x.email)}</b><span class="pill">${esc(x.role)}</span></div><h3>${esc(x.plan.toUpperCase())} — ${formatCount(x.amount)} FCFA</h3><p>Téléphone : ${esc(x.payer_phone)}<br>ID transaction : ${esc(x.transaction_id)}</p><small>${new Date(x.created_at).toLocaleString('fr-FR')}</small><div class="application-actions"><button class="btn primary approve" data-id="${x.id}">Activer</button><button class="btn danger reject" data-id="${x.id}">Paiement non trouvé</button></div></article>`).join('')||'<div class="panel empty-state">Aucune demande d’activation en attente.</div>'}</div>`;
+  $$('.approve').forEach(b=>b.onclick=()=>adminAction(b.dataset.id,'approve'));$$('.reject').forEach(b=>b.onclick=()=>adminAction(b.dataset.id,'reject'));
+}
+
+async function renderAdminVerifications(){
+  const d=await api('/api/admin/recruiter-verifications');
+  $('#viewContent').innerHTML=`<div class="module-hero"><div><span class="section-kicker">CONTRÔLE ENTREPRISE</span><h2>Vérifications recruteurs</h2><p>Examinez les entreprises en attente de validation.</p></div><span class="status-badge">${formatCount(d.recruiters.length)} dossier(s)</span></div><div class="application-cards">${d.recruiters.map(x=>`<article class="application-card"><h3>${esc(x.company_name||'Entreprise non renseignée')}</h3><p><b>${esc(((x.first_name||'')+' '+(x.last_name||'')).trim())}</b> • ${esc(x.job_title||x.email)}</p><div class="application-info"><span><small>Type</small>${esc(x.organization_type||'—')}</span><span><small>Secteur</small>${esc(x.sector||'—')}</span><span><small>Ville</small>${esc(x.company_city||'—')}</span><span><small>Téléphone</small>${esc(x.phone||'—')}</span></div><div class="application-actions"><button class="btn primary recruiter-verify" data-id="${x.user_id}">Vérifier ✓</button><button class="btn danger recruiter-reject" data-id="${x.user_id}">À compléter</button></div></article>`).join('')||'<div class="panel empty-state">Aucun dossier en attente.</div>'}</div>`;
+  $$('.recruiter-verify').forEach(b=>b.onclick=()=>recruiterVerificationAction(b.dataset.id,'verify'));$$('.recruiter-reject').forEach(b=>b.onclick=()=>recruiterVerificationAction(b.dataset.id,'reject'));
+}
+
+async function renderAdminJobs(){
+  const d=await api('/api/admin/jobs');
+  $('#viewContent').innerHTML=`<div class="module-hero"><div><span class="section-kicker">MODÉRATION</span><h2>Toutes les offres</h2><p>Supervisez les publications de l’ensemble des recruteurs.</p></div><span class="status-badge">${formatCount(d.jobs.length)} offres</span></div><div class="professional-list">${d.jobs.map(j=>`<article class="manage-card"><div><div class="card-topline"><span class="pill">${esc(j.status)}</span><small>${new Date(j.created_at).toLocaleDateString('fr-FR')}</small></div><h3>${esc(j.title)}</h3><p><b>${esc(j.company_name||j.recruiter_email)}</b> • ${esc(j.location||'')}</p><p class="muted">${formatCount(j.application_count)} candidature(s)</p></div><div class="manage-actions"><button class="btn outline-blue admin-job-detail" data-id="${j.id}">Détails</button><button class="btn danger admin-job-delete" data-id="${j.id}">Supprimer</button></div></article>`).join('')||'<div class="panel empty-state">Aucune offre.</div>'}</div>`;
+  const adminJobsById=new Map(d.jobs.map(j=>[String(j.id),j]));
+  $$('.admin-job-detail').forEach(b=>b.onclick=()=>{const j=adminJobsById.get(b.dataset.id);modal(`<h2>${esc(j.title)}</h2><p><b>${esc(j.company_name||j.recruiter_email)}</b> • ${esc(j.location||'')}</p><div class="detail-grid"><div><small>Statut</small><strong>${esc(j.status)}</strong></div><div><small>Contrat</small><strong>${esc(j.employment_type||'—')}</strong></div><div><small>Profession</small><strong>${esc(j.profession||'—')}</strong></div><div><small>Catégorie</small><strong>${esc(j.category||'—')}</strong></div><div><small>Rémunération</small><strong>${esc(j.salary||'—')}</strong></div><div><small>Candidatures</small><strong>${formatCount(j.application_count)}</strong></div></div><div class="detail-section"><h3>Description</h3><p>${esc(j.description||'')}</p></div>`)});
+  $$('.admin-job-delete').forEach(b=>b.onclick=async()=>{if(!confirm('Supprimer cette offre ?'))return;try{await api(`/api/admin/jobs/${b.dataset.id}`,{method:'DELETE'});toast('Offre supprimée.');renderAdminJobs()}catch(err){toast(err.message)}});
+}
+
+async function renderAdminApplications(){
+  const d=await api('/api/admin/applications');
+  $('#viewContent').innerHTML=`<div class="module-hero"><div><span class="section-kicker">SUIVI GLOBAL</span><h2>Candidatures de la plateforme</h2><p>Vue administrative des mouvements entre demandeurs et recruteurs.</p></div><span class="status-badge">${formatCount(d.applications.length)} candidatures</span></div><div class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Candidat</th><th>Offre</th><th>Recruteur</th><th>Statut</th></tr></thead><tbody>${d.applications.map(a=>`<tr><td>${new Date(a.created_at).toLocaleDateString('fr-FR')}</td><td>${esc(a.candidate_email)}</td><td>${esc(a.title)}</td><td>${esc(a.company_name||a.recruiter_email)}</td><td><span class="pill">${esc(a.status)}</span></td></tr>`).join('')||'<tr><td colspan="5">Aucune candidature.</td></tr>'}</tbody></table></div></div>`;
+}
+
+async function renderAdminReports(){
+  const [m,s]=await Promise.all([api('/api/dashboard-metrics'),api('/api/admin/subscription-history')]);
+  const standard=s.subscriptions.filter(x=>x.plan==='standard').length,business=s.subscriptions.filter(x=>x.plan==='business').length;
+  const theoretical=standard*1000+business*10000;
+  $('#viewContent').innerHTML=`<div class="module-hero"><div><span class="section-kicker">RAPPORTS</span><h2>Indicateurs GLOBAL EMPLOI</h2><p>Synthèse dynamique des membres, abonnements et activités enregistrées.</p></div></div><div class="dashboard-metrics admin-metrics"><div class="dash-metric"><span>♙</span><div><small>Membres</small><strong>${formatCount(m.total_users)}</strong></div></div><div class="dash-metric"><span>▣</span><div><small>Offres</small><strong>${formatCount(m.jobs)}</strong></div></div><div class="dash-metric"><span>✓</span><div><small>Candidatures</small><strong>${formatCount(m.applications)}</strong></div></div><div class="dash-metric"><span>◈</span><div><small>Payants actifs</small><strong>${formatCount(m.paid)}</strong></div></div></div><div class="dashboard-columns"><div class="dashboard-card"><h3>Historique des formules</h3><div class="admin-split"><div><strong>${formatCount(standard)}</strong><span>STANDARD enregistrés</span></div><div><strong>${formatCount(business)}</strong><span>BUSINESS enregistrés</span></div><div><strong>${formatCount(m.free)}</strong><span>FREE actifs</span></div></div></div><div class="dashboard-card"><h3>Valeur théorique des activations</h3><strong class="report-big">${formatCount(theoretical)} FCFA</strong><p class="muted">Calcul indicatif basé sur les abonnements enregistrés, et non un relevé bancaire.</p></div></div>`;
+}
+
+async function renderAdminLogs(){
+  const d=await api('/api/admin/audit-logs');
+  $('#viewContent').innerHTML=`<div class="module-hero"><div><span class="section-kicker">SÉCURITÉ</span><h2>Journal d’activité</h2><p>Consultez les dernières actions sensibles enregistrées côté serveur.</p></div></div><div class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Acteur</th><th>Action</th><th>Cible</th><th>Détails</th></tr></thead><tbody>${d.logs.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString('fr-FR')}</td><td>${esc(x.actor_email||'Système')}</td><td><b>${esc(x.action)}</b></td><td>${esc(x.target_type||'—')} #${esc(x.target_id||'')}</td><td><small>${esc((x.metadata||'').slice(0,180))}</small></td></tr>`).join('')||'<tr><td colspan="5">Aucune activité enregistrée.</td></tr>'}</tbody></table></div></div>`;
+}
 
 async function renderAdmin(){
   if(state.session.user.role!=='super_admin')throw new Error('Accès interdit');
@@ -423,15 +661,15 @@ async function renderAdmin(){
   $$('.recruiter-reject').forEach(b=>b.onclick=()=>recruiterVerificationAction(b.dataset.id,'reject'));$$('.admin-delete-user').forEach(b=>b.onclick=()=>adminDeleteUser(b.dataset.id,b.dataset.email));
 }
 async function recruiterVerificationAction(id,action){
-  try{await api(`/api/admin/recruiters/${id}/${action}`,{method:'POST',body:JSON.stringify({note:action==='reject'?'Veuillez compléter ou corriger les informations de vérification.':''})});toast(action==='verify'?'Entreprise vérifiée avec succès.':'Demande renvoyée au recruteur.');renderAdmin()}catch(err){toast(err.message)}
+  try{await api(`/api/admin/recruiters/${id}/${action}`,{method:'POST',body:JSON.stringify({note:action==='reject'?'Veuillez compléter ou corriger les informations de vérification.':''})});toast(action==='verify'?'Entreprise vérifiée avec succès.':'Demande renvoyée au recruteur.');renderAdminVerifications()}catch(err){toast(err.message)}
 }
 
 async function adminDeleteUser(id,email){
   if(!confirm(`Supprimer définitivement le compte ${email} et toutes ses publications liées ?`))return;
-  try{await api(`/api/admin/users/${id}`,{method:'DELETE'});toast('Compte et publications supprimés.');renderAdmin()}catch(err){toast(err.message)}
+  try{await api(`/api/admin/users/${id}`,{method:'DELETE'});toast('Compte et publications supprimés.');renderAdminMembers()}catch(err){toast(err.message)}
 }
 
-async function adminAction(id,action){try{await api(`/api/admin/subscription-requests/${id}/${action}`,{method:'POST',body:'{}'});toast(action==='approve'?'Abonnement activé':'Demande rejetée');renderAdmin()}catch(err){toast(err.message)}}
+async function adminAction(id,action){try{await api(`/api/admin/subscription-requests/${id}/${action}`,{method:'POST',body:'{}'});toast(action==='approve'?'Abonnement activé':'Demande rejetée');renderAdminActivations()}catch(err){toast(err.message)}}
 
 function scheduleFreePopup(){
   clearInterval(state.freeTimer);
@@ -475,8 +713,11 @@ document.querySelectorAll('[data-public-page]').forEach(a=>a.addEventListener('c
 document.querySelector('#publicNav a[href="#home"]')?.addEventListener('click',e=>{
   e.preventDefault();
   document.querySelectorAll('#guestHome > section').forEach(s=>s.classList.remove('public-page-hidden'));
-  document.querySelectorAll('#publicNav a').forEach(x=>x.classList.remove('active'));
-  e.currentTarget.classList.add('active');
+  if(state.session) showPublicHome('home');
+  else {$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');syncViewNavigation('home');}
+  buildConnectedTopNav();
+  $('#publicNav')?.classList.remove('open');
+  $('#mobileMenuBtn')?.setAttribute('aria-expanded','false');
   history.replaceState(null,'','#home');
   window.scrollTo({top:0,behavior:'smooth'});
 });
