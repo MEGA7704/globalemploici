@@ -24,6 +24,77 @@ function modal(html){$('#modalBody').innerHTML=html;$('#modal').classList.remove
 function closeModal(){$('#modal').classList.add('hidden')}
 $('#closeModal').onclick=closeModal;$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
 
+// V28 — utilitaire central d'échappement HTML. La V27 l'appelait partout sans le définir,
+// ce qui interrompait les clics dès qu'une liste ou un détail devait être rendu.
+function esc(value){
+  return String(value??'').replace(/[&<>"']/g,ch=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  })[ch]);
+}
+
+// V28 — formulaire d'inscription réellement défini. La V27 appelait registerModal()
+// depuis plusieurs boutons sans jamais fournir la fonction.
+function registerModal(initialRole='candidate'){
+  let role=initialRole==='recruiter'?'recruiter':'candidate';
+  const render=()=>{
+    const candidate=role==='candidate';
+    modal(`<div class="registration-modal">
+      <span class="section-kicker">CRÉER UN COMPTE</span>
+      <h2>${candidate?'Demandeur d’emploi':'Recruteur / Entreprise'}</h2>
+      <p class="muted">Créez votre compte GLOBAL EMPLOI. La consultation reste disponible en FREE ; les actions professionnelles nécessitent STANDARD ou BUSINESS.</p>
+      <div class="tabs registration-role-tabs">
+        <button type="button" class="tab ${candidate?'active':''}" data-register-role="candidate">Je cherche un emploi</button>
+        <button type="button" class="tab ${!candidate?'active':''}" data-register-role="recruiter">Je recrute</button>
+      </div>
+      <form id="registerForm" class="form-grid" autocomplete="on">
+        <input type="hidden" name="role" value="${role}">
+        <div class="field"><label>Nom *</label><input name="last_name" required autocomplete="family-name"></div>
+        <div class="field"><label>Prénoms *</label><input name="first_name" required autocomplete="given-name"></div>
+        ${candidate?`
+          <div class="field"><label>Date de naissance *</label><input name="birth_date" type="date" required></div>
+          <div class="field"><label>Nationalité *</label><input name="nationality" value="Ivoirienne" required></div>
+          <div class="field"><label>Ville de résidence *</label><input name="city" placeholder="Ex. Abidjan, Bouaké, Diabo…" required></div>
+          <div class="field"><label>Pays *</label><input name="country" value="Côte d’Ivoire" required></div>
+        `:`
+          <div class="field full"><label>Fonction / Poste *</label><input name="job_title" placeholder="Ex. Responsable RH, Directeur, Gérant…" required></div>
+          <div class="field"><label>Ville</label><input name="city" placeholder="Ex. Abidjan, Bouaké…"></div>
+          <div class="field"><label>Pays *</label><input name="country" value="Côte d’Ivoire" required></div>
+        `}
+        <div class="field"><label>Téléphone *</label><input name="phone" type="tel" autocomplete="tel" required></div>
+        <div class="field"><label>WhatsApp</label><input name="whatsapp" type="tel"></div>
+        <div class="field full"><label>E-mail *</label><input name="email" type="email" autocomplete="username" required></div>
+        <div class="field full"><label>Mot de passe *</label><div class="password-wrap"><input id="registerPassword" name="password" type="password" minlength="8" autocomplete="new-password" required><button class="password-toggle" type="button" data-toggle-password="registerPassword" aria-label="Afficher le mot de passe">◉</button></div><small>8 caractères minimum.</small></div>
+        <label class="check-row full"><input type="checkbox" name="terms" required> J’accepte les conditions d’utilisation.</label>
+        ${candidate?'':`<label class="check-row full"><input type="checkbox" name="privacy" required> J’accepte la politique de confidentialité.</label>`}
+        <div class="full"><button class="btn primary big" type="submit">Créer mon compte ${candidate?'demandeur':'recruteur'}</button></div>
+      </form>
+      <p class="centered-login">Déjà inscrit ? <button type="button" class="link-btn" id="openLoginFromRegister">Se connecter</button></p>
+    </div>`);
+    bindPasswordToggles();
+    $$('[data-register-role]').forEach(btn=>btn.onclick=()=>{
+      const next=btn.dataset.registerRole;
+      if(next!==role){role=next;render();}
+    });
+    $('#openLoginFromRegister')?.addEventListener('click',loginModal);
+    const form=$('#registerForm');
+    if(form){
+      form.onsubmit=async e=>{
+        e.preventDefault();
+        const fd=new FormData(form),payload=Object.fromEntries(fd);
+        payload.role=role;
+        payload.terms=fd.has('terms');
+        payload.privacy=candidate?true:fd.has('privacy');
+        try{
+          await api('/api/register',{method:'POST',body:JSON.stringify(payload)});
+          closeModal();
+          await boot();
+          toast('Compte créé avec succès.');
+        }catch(err){toast(err.message||'Impossible de créer le compte.');}
+      };
+    }
+  };
+  render();
+}
 
 
 function bindPasswordToggles(root=document){
@@ -258,13 +329,13 @@ async function boot(){
   }catch(err){
     state.session=null;
     showGuest();
-    // Une absence de session est normale. Une erreur serveur ne doit plus être masquée comme une simple déconnexion.
     if(err?.code && err.code!=='HTTP_401'){
       const code=err.code?` • Code ${err.code}`:'';
       const ref=err.reference?` • Réf. ${err.reference}`:'';
       toast(`Connexion aux données impossible : ${err.message}${code}${ref}`);
     }
   }
+  applyPublicHashRoute();
 }
 function showGuest(){
   state.view='home';$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');
@@ -1165,6 +1236,17 @@ $('#homeSearchBtn').onclick=()=>{
   if($('#jobsSearchCity'))$('#jobsSearchCity').value=city;
   openPublicPage('jobs');
 };
+
+const PUBLIC_HASH_PAGES=new Set(['jobs','candidates','trades','plans','about','companies','advice']);
+function applyPublicHashRoute(){
+  const page=String(location.hash||'').replace(/^#/,'').trim();
+  if(PUBLIC_HASH_PAGES.has(page)) openPublicPage(page);
+}
+window.addEventListener('hashchange',()=>{
+  const page=String(location.hash||'').replace(/^#/,'').trim();
+  if(PUBLIC_HASH_PAGES.has(page)) openPublicPage(page);
+  else if(page==='home'||!page) showPublicHome('home');
+});
 boot();
 
 function openPublicPage(page){
