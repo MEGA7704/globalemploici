@@ -157,3 +157,23 @@ Menu recruteur : Tableau de bord, Profil entreprise, Publier une offre, Mes offr
 
 ## V11 — Expiration des abonnements payants
 À l'expiration d'un abonnement STANDARD ou BUSINESS, le compte repasse automatiquement en FREE pour 7 jours à compter de la date d'expiration du payant. Pendant ce délai, ses publications sont masquées et Je postule / Je recrute sont désactivés. Un renouvellement payant réactive automatiquement la visibilité. Sans nouvel abonnement payant actif à la fin des 7 jours, le compte et ses données liées sont supprimés automatiquement.
+
+
+## V12 — Initialiser / Récupérer le Super Admin
+
+La connexion propose maintenant **Initialiser / Récupérer le Super Admin**.
+
+Secrets Cloudflare requis :
+- `SUPER_ADMIN_EMAIL`
+- `SUPER_ADMIN_PASSWORD`
+- `SUPER_ADMIN_RECOVERY_TOKEN`
+- `SESSION_SECRET`
+
+La procédure demande l'adresse e-mail Super Admin et le jeton de récupération. Le Worker vérifie ces informations uniquement côté serveur contre les Secrets Cloudflare. Le mot de passe n'est jamais renvoyé au navigateur et n'est jamais inclus dans GitHub ou dans le ZIP.
+
+Si le compte n'existe plus, il est recréé avec le rôle `super_admin`. S'il existe mais est bloqué, son rôle/statut sont restaurés et son mot de passe est réinitialisé à la valeur actuelle de `SUPER_ADMIN_PASSWORD`. `session_version` est incrémenté afin d'invalider toutes les anciennes sessions.
+
+La route `GET /api/health` indique seulement si la configuration Super Admin est présente et si le compte existe/est actif ; elle ne révèle ni l'e-mail, ni le mot de passe, ni le jeton.
+
+### Configuration Cloudflare
+Dans **Variables and Secrets**, créer `SUPER_ADMIN_RECOVERY_TOKEN` comme Secret avec une valeur longue, aléatoire et différente du mot de passe administrateur. Ne jamais placer sa valeur dans le dépôt GitHub.

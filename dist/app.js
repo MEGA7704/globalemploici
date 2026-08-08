@@ -20,77 +20,17 @@ function bindPasswordToggles(root=document){
     });
   });
 }
-function loginModal(){modal(`<h2>Connexion</h2><p class="muted">Accédez à votre espace GLOBAL EMPLOI.</p><form id="loginForm" class="form-grid"><div class="field full"><label>E-mail</label><input name="email" type="email" required></div><div class="field full"><label>Mot de passe</label><div class="password-wrap"><input id="loginPassword" name="password" type="password" required><button class="password-toggle" type="button" data-toggle-password="loginPassword" aria-label="Afficher le mot de passe">◉</button></div></div><div class="full"><button class="btn primary">Se connecter</button></div></form>`);bindPasswordToggles();$('#loginForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);try{await api('/api/login',{method:'POST',body:JSON.stringify(Object.fromEntries(f))});closeModal();await boot();toast('Connexion réussie');}catch(err){toast(err.message)}}}
-function registerModal(role='candidate'){
-  const candidate=role==='candidate';
-  modal(`<h2>${candidate?'Inscription — Demandeur d’emploi':'Inscription — Recruteur'}</h2>
-  <p class="muted">${candidate?'Première étape : vos informations personnelles. Les informations professionnelles seront complétées dans votre compte.':'Première étape : les informations personnelles du recruteur. Les informations de l’entreprise et les besoins de recrutement seront complétés dans votre Espace Recruteur.'}</p>
-  <div class="tabs"><button class="tab ${candidate?'active':''}" data-role="candidate">Demandeur d'emploi</button><button class="tab ${!candidate?'active':''}" data-role="recruiter">Recruteur</button></div>
-  <form id="registerForm" class="form-grid"><input type="hidden" name="role" value="${role}">
-  ${candidate?`
-    <div class="form-section full"><h3>1. Informations personnelles</h3></div>
-    <div class="field"><label>Nom *</label><input name="last_name" required></div>
-    <div class="field"><label>Prénoms *</label><input name="first_name" required></div>
-    <div class="field"><label>Sexe</label><select name="gender"><option value="">Sélectionner</option><option>Homme</option><option>Femme</option></select></div>
-    <div class="field"><label>Date de naissance *</label><input name="birth_date" type="date" required></div>
-    <div class="field"><label>Nationalité *</label><input name="nationality" required></div>
-    <div class="field"><label>Situation matrimoniale</label><select name="marital_status"><option value="">Non précisée</option><option>Célibataire</option><option>Marié(e)</option><option>Divorcé(e)</option><option>Veuf / Veuve</option></select></div>
-    <div class="field"><label>Numéro de téléphone *</label><input name="phone" type="tel" required></div>
-    <div class="field"><label>Numéro WhatsApp</label><input name="whatsapp" type="tel"></div>
-    <div class="field"><label>Adresse e-mail *</label><input name="email" type="email" required></div>
-    <div class="field"><label>Ville de résidence *</label><input name="city" required></div>
-    <div class="field"><label>Commune / Quartier</label><input name="location"></div>
-    <div class="field"><label>Pays de résidence *</label><input name="country" value="Côte d’Ivoire" required></div>
-    <div class="field full"><label>Photo de profil</label><input id="registerPhoto" type="file" accept="image/jpeg,image/png,image/webp"><small class="muted">JPG, PNG ou WebP — maximum 500 Ko.</small></div>
-    <div class="form-section full"><h3>2. Création du compte</h3></div>
-    <div class="field"><label>Adresse e-mail / Identifiant *</label><input value="" id="emailMirror" type="email" placeholder="Même e-mail que ci-dessus"></div>
-    <div class="field"><label>Mot de passe *</label><input id="regPassword" name="password" type="password" minlength="8" required></div>
-    <div class="field"><label>Confirmer le mot de passe *</label><input id="confirmPassword" type="password" minlength="8" required></div>
-    <div class="field full check-row"><label><input id="showPasswords" type="checkbox"> Afficher le mot de passe</label></div>
-    <div class="field full check-row"><label><input name="terms" type="checkbox" required> J’accepte les Conditions générales d’utilisation et la Politique de confidentialité de GLOBAL EMPLOI.</label></div>
-    <div class="field full check-row"><label><input name="job_alerts" type="checkbox"> Je souhaite recevoir des alertes correspondant à mon profil et aux emplois recherchés.</label></div>
-  `:`
-    <div class="form-section full"><h3>1. Informations personnelles du recruteur</h3><p>Les informations sur l’entreprise seront complétées après votre première connexion.</p></div>
-    <div class="field"><label>Nom *</label><input name="last_name" required></div>
-    <div class="field"><label>Prénoms *</label><input name="first_name" required></div>
-    <div class="field full"><label>Fonction / Poste *</label><input name="job_title" placeholder="Ex. Responsable RH, Directeur, Gérant, Chargé de recrutement…" required></div>
-    <div class="field"><label>Numéro de téléphone *</label><input name="phone" type="tel" required></div>
-    <div class="field"><label>Numéro WhatsApp</label><input name="whatsapp" type="tel"></div>
-    <div class="field"><label>Adresse e-mail professionnelle *</label><input name="email" type="email" required></div>
-    <div class="field"><label>Ville de résidence</label><input name="city"></div>
-    <div class="field"><label>Pays de résidence *</label><input name="country" value="Côte d’Ivoire" required></div>
-    <div class="field full"><label>Photo de profil (facultative)</label><input id="registerPhoto" type="file" accept="image/jpeg,image/png,image/webp"><small class="muted">JPG, PNG ou WebP — maximum 500 Ko.</small></div>
-    <div class="form-section full"><h3>2. Création du compte</h3></div>
-    <div class="field"><label>Adresse e-mail / Identifiant *</label><input value="" id="emailMirror" type="email" placeholder="Même e-mail professionnel"></div>
-    <div class="field"><label>Mot de passe *</label><input id="regPassword" name="password" type="password" minlength="8" required></div>
-    <div class="field"><label>Confirmer le mot de passe *</label><input id="confirmPassword" type="password" minlength="8" required></div>
-    <div class="field full check-row"><label><input id="showPasswords" type="checkbox"> Afficher le mot de passe</label></div>
-    <div class="field full check-row"><label><input name="terms" type="checkbox" required> J’accepte les Conditions générales d’utilisation de GLOBAL EMPLOI.</label></div>
-    <div class="field full check-row"><label><input name="privacy" type="checkbox" required> J’accepte la Politique de confidentialité de GLOBAL EMPLOI.</label></div>
-    <div class="field full check-row"><label><input name="marketing_alerts" type="checkbox"> Je souhaite recevoir des informations et alertes de GLOBAL EMPLOI.</label></div>
-  `}
-  <div class="full"><button class="btn primary full-btn">${candidate?'CRÉER MON COMPTE':'CRÉER MON COMPTE RECRUTEUR'}</button>
-  <p class="centered-login">Vous avez déjà un compte ? <button type="button" id="switchLogin" class="link-btn">Se connecter</button></p></div>
-  </form>`);
-  $$('.tab').forEach(b=>b.onclick=()=>registerModal(b.dataset.role));
-  $('#switchLogin').onclick=loginModal;
-  const mainEmail=$('#registerForm input[name="email"]'),mirror=$('#emailMirror');
-  mainEmail?.addEventListener('input',()=>mirror.value=mainEmail.value);
-  mirror?.addEventListener('input',()=>mainEmail.value=mirror.value);
-  $('#showPasswords').onchange=e=>{$('#regPassword').type=e.target.checked?'text':'password';$('#confirmPassword').type=e.target.checked?'text':'password'};
-  $('#registerForm').onsubmit=async e=>{
-    e.preventDefault();
-    if($('#regPassword').value!==$('#confirmPassword').value)return toast('Les mots de passe ne correspondent pas.');
-    const fd=new FormData(e.target),f=Object.fromEntries(fd);
-    f.job_alerts=fd.get('job_alerts')==='on'; f.marketing_alerts=fd.get('marketing_alerts')==='on'; f.terms=fd.get('terms')==='on'; f.privacy=fd.get('privacy')==='on';
-    const file=$('#registerPhoto')?.files?.[0];
-    if(file){if(file.size>500*1024)return toast('La photo dépasse 500 Ko.');f.photo=await fileToDataURL(file)}
-    try{
-      await api('/api/register',{method:'POST',body:JSON.stringify(f)});
-      closeModal(); await boot();
-      toast(candidate?'Compte créé. Complétez maintenant votre profil professionnel.':'Compte recruteur créé. Complétez maintenant votre Profil entreprise.');
-    }catch(err){toast(err.message)}
-  };
+function loginModal(){
+  modal(`<h2>Connexion</h2><p class="muted">Accédez à votre espace GLOBAL EMPLOI.</p>
+    <form id="loginForm" class="form-grid">
+      <div class="field full"><label>E-mail</label><input name="email" type="email" required></div>
+      <div class="field full"><label>Mot de passe</label><div class="password-wrap"><input id="loginPassword" name="password" type="password" required><button class="password-toggle" type="button" data-toggle-password="loginPassword" aria-label="Afficher le mot de passe">◉</button></div></div>
+      <div class="full"><button class="btn primary">Se connecter</button></div>
+    </form>
+    <div class="admin-recovery-entry"><span>Accès administrateur perdu ?</span><button id="openAdminRecovery" class="btn ghost" type="button">Initialiser / Récupérer le Super Admin</button></div>`);
+  bindPasswordToggles();
+  $('#openAdminRecovery')?.addEventListener('click',superAdminRecoveryModal);
+  $('#loginForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);try{await api('/api/login',{method:'POST',body:JSON.stringify(Object.fromEntries(f))});closeModal();await boot();toast('Connexion réussie');}catch(err){toast(err.message)}}
 }
 
 $('#loginBtn').onclick=loginModal;$('#registerBtn').onclick=()=>registerModal();$$('[data-open-register]').forEach(b=>b.onclick=()=>registerModal(b.dataset.openRegister));

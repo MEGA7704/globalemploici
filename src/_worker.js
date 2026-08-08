@@ -350,6 +350,68 @@ async function handleRegister(req,env){
   }
 }
 
+
+async function superAdminStatus(env){
+  const configured=!!(env.SUPER_ADMIN_EMAIL && env.SUPER_ADMIN_PASSWORD && env.SUPER_ADMIN_RECOVERY_TOKEN);
+  let exists=false, active=false;
+  if(env.SUPER_ADMIN_EMAIL){
+    const email=String(env.SUPER_ADMIN_EMAIL).trim().toLowerCase();
+    const u=await env.JOB_DB.prepare("SELECT id,role,status FROM users WHERE lower(email)=? LIMIT 1").bind(email).first();
+    exists=!!u && u.role==='super_admin';
+    active=exists && u.status==='active';
+  }
+  return {configured,exists,active};
+}
+async function checkRecoveryRate(req,env,email){
+  const ip=req.headers.get('CF-Connecting-IP')||'unknown';
+  const key=`admin-recovery:${ip}:${String(email||'').toLowerCase()}`;
+  const count=Number(await env.JOB_KV.get(key)||0);
+  if(count>=5) return false;
+  await env.JOB_KV.put(key,String(count+1),{expirationTtl:1800});
+  return true;
+}
+async function handleSuperAdminRecover(req,env){
+  const b=await req.json().catch(()=>({}));
+  const email=safeText(b.email,190).toLowerCase();
+  const recoveryToken=String(b.recovery_token||'');
+  if(!env.SUPER_ADMIN_EMAIL || !env.SUPER_ADMIN_PASSWORD || !env.SUPER_ADMIN_RECOVERY_TOKEN){
+    return json({error:'Récupération Super Admin non configurée. Ajoutez SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD et SUPER_ADMIN_RECOVERY_TOKEN dans les Secrets Cloudflare.'},503);
+  }
+  const expectedEmail=String(env.SUPER_ADMIN_EMAIL).trim().toLowerCase();
+  if(!await checkRecoveryRate(req,env,email)) return json({error:'Trop de tentatives de récupération. Réessayez plus tard.'},429);
+  if(email!==expectedEmail || !timingSafe(recoveryToken,String(env.SUPER_ADMIN_RECOVERY_TOKEN))){
+    await new Promise(r=>setTimeout(r,250));
+    return json({error:'Informations de récupération incorrectes.'},403);
+  }
+
+  const p=await createPassword(String(env.SUPER_ADMIN_PASSWORD));
+  let u=await env.JOB_DB.prepare('SELECT * FROM users WHERE lower(email)=? LIMIT 1').bind(expectedEmail).first();
+  let action='SUPER_ADMIN_RECOVERED';
+
+  if(!u){
+    u=await env.JOB_DB.prepare(`INSERT INTO users(email,password_hash,password_salt,role,status,session_version,created_at,updated_at)
+      VALUES(?,?,?,'super_admin','active',1,?,?) RETURNING *`)
+      .bind(expectedEmail,p.hash,p.salt,nowISO(),nowISO()).first();
+    action='SUPER_ADMIN_INITIALIZED';
+  }else{
+    await env.JOB_DB.prepare(`UPDATE users SET email=?,password_hash=?,password_salt=?,role='super_admin',status='active',
+      session_version=session_version+1,updated_at=? WHERE id=?`)
+      .bind(expectedEmail,p.hash,p.salt,nowISO(),u.id).run();
+    u=await env.JOB_DB.prepare('SELECT * FROM users WHERE id=?').bind(u.id).first();
+  }
+
+  // La hausse de session_version invalide toutes les anciennes sessions de ce compte.
+  await audit(env,u.id,action,'user',u.id,{method:'cloudflare_recovery_secret'});
+  try{
+    const ip=req.headers.get('CF-Connecting-IP')||'unknown';
+    await env.JOB_KV.delete(`admin-recovery:${ip}:${email}`);
+  }catch{}
+  return json({
+    ok:true,
+    status:'ready',
+    message:'Compte Super Admin initialisé/récupéré. Connectez-vous maintenant avec SUPER_ADMIN_EMAIL et SUPER_ADMIN_PASSWORD configurés dans Cloudflare.'
+  });
+}
 async function handleLogin(req,env){
   const b=await req.json().catch(()=>({})); const email=safeText(b.email,190).toLowerCase(), password=String(b.password||'');
   if(!await checkRate(req,env,email)) return json({error:'Trop de tentatives. Réessayez plus tard.'},429);
@@ -371,8 +433,11 @@ async function api(req,env,url){
     assertBindings(env);
     await checkDatabase(env);
     await checkKV(env);
-    return json({ok:true,service:'GLOBAL EMPLOI',d1:'ok',kv:'ok',assets:'ok'});
+    const admin=await superAdminStatus(env);
+    return json({ok:true,service:'GLOBAL EMPLOI',d1:'ok',kv:'ok',assets:'ok',super_admin:{configured:admin.configured,exists:admin.exists,active:admin.active}});
   }
+  if(p==='/api/admin-recovery/status'&&m==='GET') return json(await superAdminStatus(env));
+  if(p==='/api/admin-recovery/recover'&&m==='POST') return handleSuperAdminRecover(req,env);
   if(p==='/api/register'&&m==='POST') return handleRegister(req,env);
   if(p==='/api/login'&&m==='POST') return handleLogin(req,env);
   if(p==='/api/logout'&&m==='POST'){ const s=await getSession(req,env); if(s) await env.JOB_KV.delete(`sess:${s.token}`); return json({ok:true},200,{'set-cookie':clearCookie()}); }

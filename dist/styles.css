@@ -89,3 +89,14 @@
 .free-expiry-alert{margin:16px 0;padding:14px;border-radius:12px;background:#fff4e5;border:1px solid #ffc970;color:#7a4300;line-height:1.55}
 .visibility-notice{margin-bottom:16px;padding:12px 14px;border-radius:12px;background:#EFF5FF;border:1px solid #cfe0ff;color:#153d7a}
 .disabled-action{opacity:.65;cursor:not-allowed;background:#eef1f5!important;color:#667085!important;border:1px solid #dfe4ea!important}
+
+/* V12 — récupération Super Admin */
+.admin-recovery-entry{margin-top:18px;padding-top:16px;border-top:1px solid #e8edf3;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.admin-recovery-entry span{font-size:13px;color:#667085}
+.admin-recovery-box{max-width:680px}
+.recovery-status{margin:16px 0;padding:14px;border-radius:12px;line-height:1.65}
+.recovery-status.ok{background:#ecfdf3;border:1px solid #b7ebca;color:#176b3a}
+.recovery-status.warn{background:#fff7e8;border:1px solid #ffd59b;color:#835000}
+.recovery-warning{padding:13px;border-radius:10px;background:#fff7e8;border:1px solid #ffd59b;color:#6d4609;line-height:1.55}
+.recovery-help{margin-top:16px;padding:12px;border-radius:10px;background:#f5f7fa;color:#475467;line-height:1.6;font-size:13px}
+@media(max-width:640px){.admin-recovery-entry{align-items:stretch;flex-direction:column}.admin-recovery-entry .btn{width:100%}}
