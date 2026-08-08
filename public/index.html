@@ -20,13 +20,7 @@
 
   <nav id="publicNav" class="public-nav" aria-label="Navigation principale">
     <a href="#home" class="active">Accueil</a>
-    <a href="#jobs" data-public-page="jobs">Offres d’emploi</a>
-    <a href="#candidates" data-public-page="candidates">Profils / Candidats</a>
-    <a href="#companies" data-public-page="companies">Entreprises</a>
-    <a href="#trades" data-public-page="trades">Métiers</a>
-    <a href="#advice" data-public-page="advice">Conseils</a>
-    <a href="#about" data-public-page="about">À propos</a>
-    <a href="#contact" data-public-page="contact">Contact</a>
+    <div id="connectedNavItems" class="connected-nav-items hidden" aria-label="Menu du compte connecté"></div>
   </nav>
 
   <div class="nav-actions">
@@ -97,11 +91,10 @@
   </section>
 
   <section class="stats-wrap" aria-label="Statistiques GLOBAL EMPLOI">
-    <div class="stats-card">
-      <div class="stat-item"><span class="stat-icon">▣</span><div><strong>2 500+</strong><span>Offres d’emploi</span></div></div>
-      <div class="stat-item"><span class="stat-icon">▦</span><div><strong>1 200+</strong><span>Entreprises</span></div></div>
-      <div class="stat-item"><span class="stat-icon">♙</span><div><strong>15 000+</strong><span>Candidats inscrits</span></div></div>
-      <div class="stat-item"><span class="stat-icon">✓</span><div><strong>8 500+</strong><span>Recrutements réussis</span></div></div>
+    <div class="stats-card stats-card-three">
+      <div class="stat-item"><span class="stat-icon">▣</span><div><strong id="realJobsCount">—</strong><span>Offres d’emploi</span><small id="realJobsMove">Données en temps réel</small></div></div>
+      <div class="stat-item"><span class="stat-icon">▦</span><div><strong id="realCompaniesCount">—</strong><span>Entreprises</span><small id="realCompaniesMove">Données en temps réel</small></div></div>
+      <div class="stat-item"><span class="stat-icon">♙</span><div><strong id="realCandidatesCount">—</strong><span>Candidats inscrits</span><small id="realCandidatesMove">Données en temps réel</small></div></div>
     </div>
   </section>
 

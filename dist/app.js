@@ -6,13 +6,6 @@ function modal(html){$('#modalBody').innerHTML=html;$('#modal').classList.remove
 function closeModal(){$('#modal').classList.add('hidden')}
 $('#closeModal').onclick=closeModal;$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
 
-document.addEventListener('click',e=>{
-  const btn=e.target.closest?.('#openAdminRecovery');
-  if(!btn)return;
-  e.preventDefault();
-  e.stopPropagation();
-  superAdminRecoveryModal();
-});
 
 
 function bindPasswordToggles(root=document){
@@ -87,10 +80,8 @@ function loginModal(){
       <div class="field full"><label>E-mail</label><input name="email" type="email" required></div>
       <div class="field full"><label>Mot de passe</label><div class="password-wrap"><input id="loginPassword" name="password" type="password" required><button class="password-toggle" type="button" data-toggle-password="loginPassword" aria-label="Afficher le mot de passe">◉</button></div></div>
       <div class="full"><button class="btn primary">Se connecter</button></div>
-    </form>
-    <div class="admin-recovery-entry"><span>Accès administrateur perdu ?</span><button id="openAdminRecovery" class="btn ghost" type="button">Initialiser / Récupérer le Super Admin</button></div>`);
+    </form>`);
   bindPasswordToggles();
-  $('#openAdminRecovery')?.addEventListener('click',superAdminRecoveryModal);
   $('#loginForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);try{await api('/api/login',{method:'POST',body:JSON.stringify(Object.fromEntries(f))});closeModal();await boot();toast('Connexion réussie');}catch(err){toast(err.message)}}
 }
 
@@ -114,9 +105,27 @@ function accountItems(role){
   ];
   return [['dashboard','⌂','Tableau de bord'],['admin','◆','Administration'],['messages','✉','Messages'],['settings','⚙','Paramètres']];
 }
+function buildConnectedTopNav(){
+  const box=$('#connectedNavItems');
+  if(!box)return;
+  if(!state.session){box.innerHTML='';box.classList.add('hidden');return;}
+  box.classList.remove('hidden');
+  box.innerHTML=accountItems(state.session.user.role).map(([view,icon,label])=>
+    `<button class="top-account-link ${state.view===view?'active':''}" type="button" data-top-view="${view}"><span>${icon}</span>${label}</button>`
+  ).join('');
+  $$('[data-top-view]').forEach(b=>b.onclick=()=>{
+    navigateView(b.dataset.topView);
+    $('#publicNav')?.classList.remove('open');
+    $('#mobileMenuBtn')?.setAttribute('aria-expanded','false');
+  });
+}
 function buildAccountMenu(){const u=state.session?.user;if(!u)return;const role=roleLabel(u.role);$('#accountLabel').textContent='Mon compte';$('#menuAccountEmail').textContent=u.email;$('#menuAccountRole').textContent=role;$('#menuAccountName').textContent=u.email.split('@')[0]||'Mon compte';const nav=$('#accountMenuItems');nav.innerHTML=accountItems(u.role).map(([view,icon,label])=>`<button class="account-menu-link ${state.view===view?'active':''}" type="button" data-account-view="${view}" role="menuitem"><span>${icon}</span><b>${label}</b></button>`).join('');$$('[data-account-view]').forEach(b=>b.onclick=()=>{navigateView(b.dataset.accountView);closeAccountMenu()});loadAccountDisplayName()}
 async function loadAccountDisplayName(){try{const d=await api('/api/profile'),p=d.profile||{};const full=[p.first_name,p.last_name].filter(Boolean).join(' ').trim();const company=p.company_name||p.commercial_name||'';const label=company||full;if(label){$('#accountLabel').textContent=label.length>20?label.slice(0,20)+'…':label;$('#menuAccountName').textContent=label}}catch{}}
-function syncViewNavigation(view){$$('[data-account-view]').forEach(x=>x.classList.toggle('active',x.dataset.accountView===view))}
+function syncViewNavigation(view){
+  $$('[data-account-view]').forEach(x=>x.classList.toggle('active',x.dataset.accountView===view));
+  $$('[data-top-view]').forEach(x=>x.classList.toggle('active',x.dataset.topView===view));
+  $('#publicNav a[href="#home"]')?.classList.toggle('active',view==='home');
+}
 function showPublicHome(anchor='home'){
   state.view='home';
   $('#guestHome').classList.remove('hidden');
@@ -127,6 +136,7 @@ function showPublicHome(anchor='home'){
 }
 function navigateView(view){
   if(!state.session)return loginModal();
+  buildConnectedTopNav();
   $('#guestHome').classList.add('hidden');
   $('#app').classList.remove('hidden');
   syncViewNavigation(view);
@@ -134,18 +144,114 @@ function navigateView(view){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
+function formatCount(n){return new Intl.NumberFormat('fr-FR').format(Number(n||0))}
+async function loadPublicStats(){
+  try{
+    const d=await api('/api/public-stats');
+    if($('#realJobsCount'))$('#realJobsCount').textContent=formatCount(d.jobs);
+    if($('#realCompaniesCount'))$('#realCompaniesCount').textContent=formatCount(d.companies);
+    if($('#realCandidatesCount'))$('#realCandidatesCount').textContent=formatCount(d.candidates);
+    if($('#realJobsMove'))$('#realJobsMove').textContent=`+${formatCount(d.movement?.jobs30||0)} sur 30 jours`;
+    if($('#realCompaniesMove'))$('#realCompaniesMove').textContent=`+${formatCount(d.movement?.companies30||0)} sur 30 jours`;
+    if($('#realCandidatesMove'))$('#realCandidatesMove').textContent=`+${formatCount(d.movement?.candidates30||0)} sur 30 jours`;
+  }catch{}
+}
 async function boot(){
   try{state.session=await api('/api/session');showConnectedHome();scheduleFreePopup();}
   catch{state.session=null;showGuest();}
 }
-function showGuest(){state.view='home';$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');$('#loginBtn').classList.remove('hidden');$('#registerBtn').classList.remove('hidden');$('#accountControl').classList.add('hidden');closeAccountMenu()}
-function showConnectedHome(){const u=state.session.user;state.view='home';$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');$('#loginBtn').classList.add('hidden');$('#registerBtn').classList.add('hidden');$('#accountControl').classList.remove('hidden');buildAccountMenu();updateSubChip();syncViewNavigation('home')}
+function showGuest(){
+  state.view='home';$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');
+  $('#loginBtn').classList.remove('hidden');$('#registerBtn').classList.remove('hidden');$('#accountControl').classList.add('hidden');
+  buildConnectedTopNav();closeAccountMenu();loadPublicStats();
+}
+function showConnectedHome(){
+  const u=state.session.user;state.view='home';$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');
+  $('#loginBtn').classList.add('hidden');$('#registerBtn').classList.add('hidden');$('#accountControl').classList.remove('hidden');
+  buildAccountMenu();buildConnectedTopNav();updateSubChip();syncViewNavigation('home');loadPublicStats();
+}
 function updateSubChip(){const s=state.session.subscription;if(!s){$('#subscriptionChip').textContent='Aucun abonnement';return}const d=new Date(s.expires_at).toLocaleDateString('fr-FR');$('#subscriptionChip').textContent=`${s.plan.toUpperCase()} • jusqu'au ${d}`}
 $('#backHomeBtn')?.addEventListener('click',()=>showPublicHome('home'));
 async function render(view){state.view=view;syncViewNavigation(view);const c=$('#viewContent'),t=$('#viewTitle');const names={dashboard:'Tableau de bord',profile:state.session?.user?.role==='recruiter'?'Profil entreprise':'Mon profil',jobs:"Publier une offre / Offres d'emploi",myjobs:'Mes offres',applications:'Candidatures reçues',recruitment:'Propositions reçues',candidates:'Recherche de candidats',favorites:'Favoris',messages:'Messages',subscription:'Abonnement',payments:'Paiements',settings:'Paramètres',admin:'Administration'};t.textContent=names[view]||view;c.innerHTML='<div class="panel">Chargement…</div>';try{if(view==='dashboard')return renderDashboard();if(view==='profile')return renderProfile();if(view==='jobs')return renderJobs();if(view==='myjobs')return renderMyJobs();if(view==='applications')return renderRecruiterApplications();if(view==='recruitment')return renderRecruitmentRequests();if(view==='candidates')return renderCandidates();if(view==='favorites')return renderFavorites();if(view==='messages')return renderMessages();if(view==='subscription'||view==='payments')return renderSubscription();if(view==='settings')return renderSettings();if(view==='admin')return renderAdmin();}catch(e){c.innerHTML=`<div class="panel"><b>Erreur :</b> ${esc(e.message)}</div>`}}
 
-async function renderDashboard(){const u=state.session.user,s=state.session.subscription;if(u.role==='candidate'){let c={percent:0,recommendations:[]};try{c=await api('/api/profile/completeness')}catch{}$('#viewContent').innerHTML=`<div class="profile-progress-card"><div><span class="section-kicker">VOTRE PROFIL</span><h3>Profil complété à ${c.percent}%</h3><p class="muted">Un profil complet améliore votre présentation auprès des recruteurs.</p></div><div class="progress-ring"><strong>${c.percent}%</strong></div><div class="progress-track"><span style="width:${c.percent}%"></span></div>${c.recommendations.length?`<div class="recommendations">${c.recommendations.slice(0,4).map(x=>`<button class="recommendation go-profile">+ ${esc(x)}</button>`).join('')}</div>`:''}</div><div class="grid"><div class="card metric"><span>Type de compte</span><strong>Demandeur</strong></div><div class="card metric"><span>Formule</span><strong>${s?.plan?.toUpperCase()||'—'}</strong></div><div class="card metric"><span>Statut</span><strong>${s?.effective_status==='active'?'Actif':'Expiré'}</strong></div><div class="card metric"><span>Profil</span><strong>${c.percent}%</strong></div></div>`;$$('.go-profile').forEach(b=>b.onclick=()=>render('profile'));return}if(u.role==='recruiter'){let d={completeness:{percent:0,recommendations:[],verification_status:'unverified'}};try{d=await api('/api/profile')}catch{}const c=d.completeness||{percent:0,recommendations:[],verification_status:'unverified'};const vs=c.verification_status==='verified'?'Entreprise vérifiée ✓':c.verification_status==='pending'?'Vérification en cours':'Compte non vérifié';$('#viewContent').innerHTML=`<div class="verification-card ${c.verification_status||'unverified'}"><div><span class="section-kicker">ESPACE RECRUTEUR</span><h3>${vs}</h3><p>Profil entreprise complété à ${c.percent}%.</p></div><button class="btn ghost go-profile">Compléter le profil</button></div><div class="grid"><div class="card metric"><span>Type de compte</span><strong>Recruteur</strong></div><div class="card metric"><span>Formule</span><strong>${s?.plan?.toUpperCase()||'—'}</strong></div><div class="card metric"><span>Vérification</span><strong>${c.verification_status==='verified'?'✓':'…'}</strong></div><div class="card metric"><span>Profil</span><strong>${c.percent}%</strong></div></div>`;$('.go-profile')?.addEventListener('click',()=>render('profile'));return}$('#viewContent').innerHTML=`<div class="grid"><div class="card metric"><span>Type de compte</span><strong>Super Admin</strong></div><div class="card metric"><span>Administration</span><strong>✓</strong></div></div>`}
+async function renderDashboard(){
+  const u=state.session.user,s=state.session.subscription;
+  let m={};
+  try{m=await api('/api/dashboard-metrics')}catch{}
+  const plan=s?.plan?.toUpperCase()||'—';
+  const active=s?.effective_status==='active';
+  const expiry=s?.expires_at?new Date(s.expires_at).toLocaleDateString('fr-FR'):'—';
 
+  if(u.role==='candidate'){
+    let c={percent:0,recommendations:[]};try{c=await api('/api/profile/completeness')}catch{}
+    $('#viewContent').innerHTML=`
+      <section class="role-dashboard candidate-dashboard">
+        <div class="dashboard-welcome">
+          <div><span class="section-kicker">ESPACE DEMANDEUR</span><h2>Votre activité GLOBAL EMPLOI</h2><p>Suivez votre profil, vos candidatures et les propositions reçues depuis un seul espace.</p></div>
+          <div class="dashboard-plan"><small>ABONNEMENT</small><strong>${plan}</strong><span>${active?'Actif':'À renouveler'} • ${expiry}</span></div>
+        </div>
+        <div class="dashboard-metrics">
+          <button class="dash-metric go-profile"><span>◔</span><div><small>Profil complété</small><strong>${c.percent}%</strong></div></button>
+          <button class="dash-metric" data-dash-view="jobs"><span>▣</span><div><small>Candidatures envoyées</small><strong>${formatCount(m.applications)}</strong></div></button>
+          <button class="dash-metric" data-dash-view="recruitment"><span>★</span><div><small>Propositions reçues</small><strong>${formatCount(m.recruitment_requests)}</strong></div></button>
+          <button class="dash-metric" data-dash-view="messages"><span>✉</span><div><small>Notifications non lues</small><strong>${formatCount(m.unread)}</strong></div></button>
+        </div>
+        <div class="dashboard-columns">
+          <div class="dashboard-card"><h3>Améliorer mon profil</h3><div class="progress-track"><span style="width:${c.percent}%"></span></div>
+            <div class="recommendations">${c.recommendations.length?c.recommendations.slice(0,4).map(x=>`<button class="recommendation go-profile">+ ${esc(x)}</button>`).join(''):'<p class="muted">Votre profil est bien renseigné.</p>'}</div>
+          </div>
+          <div class="dashboard-card"><h3>Accès rapides</h3><div class="quick-actions">
+            <button data-dash-view="jobs">Voir les offres</button><button data-dash-view="recruitment">Propositions reçues</button><button data-dash-view="messages">Messages</button><button data-dash-view="subscription">Mon abonnement</button>
+          </div></div>
+        </div>
+      </section>`;
+    $$('.go-profile').forEach(b=>b.onclick=()=>navigateView('profile'));
+  }else if(u.role==='recruiter'){
+    let d={completeness:{percent:0,recommendations:[],verification_status:'unverified'}};try{d=await api('/api/profile')}catch{}
+    const c=d.completeness||{percent:0,recommendations:[],verification_status:'unverified'};
+    const verified=c.verification_status==='verified'?'Entreprise vérifiée ✓':c.verification_status==='pending'?'Vérification en cours':'Compte non vérifié';
+    $('#viewContent').innerHTML=`
+      <section class="role-dashboard recruiter-dashboard">
+        <div class="dashboard-welcome">
+          <div><span class="section-kicker">ESPACE RECRUTEUR</span><h2>Pilotez vos recrutements</h2><p>Gérez vos offres, vos candidats et vos échanges professionnels en temps réel.</p></div>
+          <div class="dashboard-plan"><small>ABONNEMENT</small><strong>${plan}</strong><span>${active?'Actif':'À renouveler'} • ${expiry}</span></div>
+        </div>
+        <div class="verification-card ${c.verification_status||'unverified'}"><div><b>${verified}</b><span> • Profil entreprise ${c.percent}% complété</span></div><button class="btn ghost go-profile">Voir mon profil</button></div>
+        <div class="dashboard-metrics">
+          <button class="dash-metric" data-dash-view="myjobs"><span>▤</span><div><small>Offres créées</small><strong>${formatCount(m.jobs)}</strong></div></button>
+          <button class="dash-metric" data-dash-view="myjobs"><span>◉</span><div><small>Offres visibles</small><strong>${formatCount(m.visible_jobs)}</strong></div></button>
+          <button class="dash-metric" data-dash-view="applications"><span>✓</span><div><small>Candidatures reçues</small><strong>${formatCount(m.applications)}</strong></div></button>
+          <button class="dash-metric" data-dash-view="messages"><span>✉</span><div><small>Notifications non lues</small><strong>${formatCount(m.unread)}</strong></div></button>
+        </div>
+        <div class="dashboard-columns">
+          <div class="dashboard-card"><h3>Recrutement</h3><p class="muted">Publiez une offre ou recherchez directement un professionnel.</p><div class="quick-actions"><button data-dash-view="jobs">＋ Publier une offre</button><button data-dash-view="candidates">♙ Rechercher des candidats</button><button data-dash-view="applications">✓ Voir les postulants</button></div></div>
+          <div class="dashboard-card"><h3>Compte entreprise</h3><p><b>${verified}</b></p><p class="muted">${active?'Vos publications peuvent être visibles selon leur statut.':'Vos publications sont actuellement masquées jusqu’au renouvellement.'}</p><button class="btn primary" data-dash-view="subscription">Gérer mon abonnement</button></div>
+        </div>
+      </section>`;
+    $$('.go-profile').forEach(b=>b.onclick=()=>navigateView('profile'));
+  }else{
+    $('#viewContent').innerHTML=`
+      <section class="role-dashboard admin-dashboard-pro">
+        <div class="dashboard-welcome admin-welcome">
+          <div><span class="section-kicker">SUPER ADMIN</span><h2>Centre de pilotage GLOBAL EMPLOI</h2><p>Vue synthétique des membres, abonnements, recrutements et demandes nécessitant une intervention.</p></div>
+          <div class="dashboard-plan"><small>NOUVEAUX MEMBRES</small><strong>+${formatCount(m.new_users_30d)}</strong><span>sur les 30 derniers jours</span></div>
+        </div>
+        <div class="dashboard-metrics admin-metrics">
+          <button class="dash-metric" data-dash-view="admin"><span>♙</span><div><small>Membres</small><strong>${formatCount(m.total_users)}</strong></div></button>
+          <button class="dash-metric" data-dash-view="admin"><span>◈</span><div><small>Comptes payants actifs</small><strong>${formatCount(m.paid)}</strong></div></button>
+          <button class="dash-metric" data-dash-view="admin"><span>○</span><div><small>Comptes FREE</small><strong>${formatCount(m.free)}</strong></div></button>
+          <button class="dash-metric" data-dash-view="admin"><span>▣</span><div><small>Offres enregistrées</small><strong>${formatCount(m.jobs)}</strong></div></button>
+          <button class="dash-metric" data-dash-view="admin"><span>✓</span><div><small>Candidatures</small><strong>${formatCount(m.applications)}</strong></div></button>
+          <button class="dash-metric alert" data-dash-view="admin"><span>!</span><div><small>Activations en attente</small><strong>${formatCount(m.pending_subscriptions)}</strong></div></button>
+        </div>
+        <div class="dashboard-columns admin-columns">
+          <div class="dashboard-card"><h3>Répartition des membres</h3><div class="admin-split"><div><strong>${formatCount(m.candidates)}</strong><span>Demandeurs</span></div><div><strong>${formatCount(m.recruiters)}</strong><span>Recruteurs</span></div><div><strong>${formatCount(m.pending_verifications)}</strong><span>Vérifications en attente</span></div></div></div>
+          <div class="dashboard-card"><h3>Actions administratives</h3><div class="quick-actions"><button data-dash-view="admin">◆ Administration complète</button><button data-dash-view="messages">✉ Messages</button><button data-dash-view="settings">⚙ Sécurité & paramètres</button></div></div>
+        </div>
+      </section>`;
+  }
+  $$('[data-dash-view]').forEach(b=>b.onclick=()=>navigateView(b.dataset.dashView));
+}
 async function renderProfile(){const d=await api('/api/profile'),p=d.profile||{};if(state.session.user.role==='super_admin')return $('#viewContent').innerHTML='<div class="panel">Le Super Admin ne possède pas de profil candidat/recruteur.</div>';const candidate=state.session.user.role==='candidate';if(!candidate){
   const docs=d.documents||[],comp=d.completeness||{percent:0,recommendations:[],verification_status:'unverified'};
   const status=comp.verification_status||p.verification_status||'unverified';

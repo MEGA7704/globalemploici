@@ -177,3 +177,14 @@ La route `GET /api/health` indique seulement si la configuration Super Admin est
 
 ### Configuration Cloudflare
 Dans **Variables and Secrets**, créer `SUPER_ADMIN_RECOVERY_TOKEN` comme Secret avec une valeur longue, aléatoire et différente du mot de passe administrateur. Ne jamais placer sa valeur dans le dépôt GitHub.
+
+
+## V14 — Navigation, statistiques réelles et identité rose
+
+- Les visiteurs voient uniquement **Accueil** dans la barre de navigation.
+- Après connexion, les rubriques correspondant au rôle sont injectées horizontalement dans la même barre : Demandeur, Recruteur ou Super Admin.
+- Les anciennes entrées publiques Offres d'emploi, Profils/Candidats, Entreprises, Métiers, Conseils, À propos et Contact ne sont plus affichées dans la barre principale.
+- La zone statistique de l'accueil contient exactement trois indicateurs issus de D1 : offres d'emploi visibles, entreprises/recruteurs actifs et candidats actifs. Chaque indicateur affiche également le mouvement des 30 derniers jours.
+- Le lien visible **Initialiser / Récupérer le Super Admin** a été retiré de la fenêtre de connexion. Les routes sécurisées V12/V13 restent disponibles côté serveur pour maintenance.
+- Les tableaux de bord Demandeur, Recruteur et Super Admin utilisent désormais des métriques dynamiques réelles.
+- Toute l'interface adopte une identité **rose amour** : rose profond, rose poudré, bordeaux rosé, dégradés, ombres douces et nuances.

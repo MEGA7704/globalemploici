@@ -438,6 +438,61 @@ async function api(req,env,url){
   }
   if(p==='/api/admin-recovery/status'&&m==='GET') return json(await superAdminStatus(env));
   if(p==='/api/admin-recovery/recover'&&m==='POST') return handleSuperAdminRecover(req,env);
+  if(p==='/api/public-stats'&&m==='GET'){
+    const [jobs,recruiters,candidates,jobs30,recruiters30,candidates30]=await Promise.all([
+      env.JOB_DB.prepare(`SELECT COUNT(*) n FROM jobs j JOIN users u ON u.id=j.recruiter_id
+        WHERE j.status='published' AND u.status='active'
+        AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=j.recruiter_id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now'))`).first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM users WHERE role='recruiter' AND status='active'").first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM users WHERE role='candidate' AND status='active'").first(),
+      env.JOB_DB.prepare(`SELECT COUNT(*) n FROM jobs WHERE datetime(created_at)>=datetime('now','-30 days')`).first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM users WHERE role='recruiter' AND datetime(created_at)>=datetime('now','-30 days')").first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM users WHERE role='candidate' AND datetime(created_at)>=datetime('now','-30 days')").first()
+    ]);
+    return json({
+      jobs:Number(jobs?.n||0),companies:Number(recruiters?.n||0),candidates:Number(candidates?.n||0),
+      movement:{jobs30:Number(jobs30?.n||0),companies30:Number(recruiters30?.n||0),candidates30:Number(candidates30?.n||0)}
+    });
+  }
+  if(p==='/api/dashboard-metrics'&&m==='GET'){
+    const s=await requireSession(req,env), uid=s.user.id, role=s.user.role;
+    if(role==='candidate'){
+      await ensureCandidateSchema(env); await ensureRecruitmentSchema(env);
+      const [apps,offers,unread,docs]=await Promise.all([
+        env.JOB_DB.prepare('SELECT COUNT(*) n FROM applications WHERE candidate_id=?').bind(uid).first(),
+        env.JOB_DB.prepare('SELECT COUNT(*) n FROM recruitment_requests WHERE candidate_id=?').bind(uid).first(),
+        env.JOB_DB.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND is_read=0').bind(uid).first(),
+        env.JOB_DB.prepare('SELECT COUNT(*) n FROM candidate_documents WHERE user_id=?').bind(uid).first()
+      ]);
+      return json({role,applications:Number(apps?.n||0),recruitment_requests:Number(offers?.n||0),unread:Number(unread?.n||0),documents:Number(docs?.n||0)});
+    }
+    if(role==='recruiter'){
+      await ensureRecruitmentSchema(env);
+      const [jobs,visible,apps,recruits,unread]=await Promise.all([
+        env.JOB_DB.prepare('SELECT COUNT(*) n FROM jobs WHERE recruiter_id=?').bind(uid).first(),
+        env.JOB_DB.prepare(`SELECT COUNT(*) n FROM jobs j WHERE j.recruiter_id=? AND j.status='published'
+          AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=j.recruiter_id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now'))`).bind(uid).first(),
+        env.JOB_DB.prepare('SELECT COUNT(*) n FROM applications a JOIN jobs j ON j.id=a.job_id WHERE j.recruiter_id=?').bind(uid).first(),
+        env.JOB_DB.prepare('SELECT COUNT(*) n FROM recruitment_requests WHERE recruiter_id=?').bind(uid).first(),
+        env.JOB_DB.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND is_read=0').bind(uid).first()
+      ]);
+      return json({role,jobs:Number(jobs?.n||0),visible_jobs:Number(visible?.n||0),applications:Number(apps?.n||0),recruitment_requests:Number(recruits?.n||0),unread:Number(unread?.n||0)});
+    }
+    await ensureRecruiterSchema(env);
+    const [users,candidates,recruiters,paid,free,pendingSubs,pendingVerify,jobs,applications,newUsers]=await Promise.all([
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM users WHERE role!='super_admin'").first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM users WHERE role='candidate' AND status='active'").first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM users WHERE role='recruiter' AND status='active'").first(),
+      env.JOB_DB.prepare(`SELECT COUNT(DISTINCT user_id) n FROM subscriptions WHERE plan IN ('standard','business') AND status='active' AND datetime(expires_at)>datetime('now')`).first(),
+      env.JOB_DB.prepare(`SELECT COUNT(DISTINCT user_id) n FROM subscriptions WHERE plan='free' AND status='active' AND datetime(expires_at)>datetime('now')`).first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM subscription_requests WHERE status='pending'").first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM recruiter_profiles WHERE verification_status='pending'").first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM jobs").first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM applications").first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM users WHERE role!='super_admin' AND datetime(created_at)>=datetime('now','-30 days')").first()
+    ]);
+    return json({role,total_users:Number(users?.n||0),candidates:Number(candidates?.n||0),recruiters:Number(recruiters?.n||0),paid:Number(paid?.n||0),free:Number(free?.n||0),pending_subscriptions:Number(pendingSubs?.n||0),pending_verifications:Number(pendingVerify?.n||0),jobs:Number(jobs?.n||0),applications:Number(applications?.n||0),new_users_30d:Number(newUsers?.n||0)});
+  }
   if(p==='/api/register'&&m==='POST') return handleRegister(req,env);
   if(p==='/api/login'&&m==='POST') return handleLogin(req,env);
   if(p==='/api/logout'&&m==='POST'){ const s=await getSession(req,env); if(s) await env.JOB_KV.delete(`sess:${s.token}`); return json({ok:true},200,{'set-cookie':clearCookie()}); }
