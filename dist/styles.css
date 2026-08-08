@@ -354,3 +354,19 @@ body{background:linear-gradient(180deg,#fff 0%,#fffafd 48%,#fff6fa 100%)}
   #app{display:block!important}
   .panel,.dashboard-card,.dash-metric{box-shadow:none!important}
 }
+
+/* V17 — espace recruteur professionnel */
+.recruiter-status-strip{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid #F0DCE5;border-radius:14px;padding:13px 15px}
+.visibility-alert{color:#9A3B5D;font-weight:750}
+.recruiter-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+.dash-metric em{font-size:10px;color:#B41454;font-style:normal;margin-top:2px}
+.recruiter-quick{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.mini-state-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}.mini-state-grid div{background:#FFF5F9;border-radius:12px;padding:14px;display:flex;flex-direction:column}.mini-state-grid strong{font-size:24px;color:#8F1648}.mini-state-grid span{font-size:12px;color:#806477}
+.recruiter-job-form textarea{resize:vertical}
+.recruiter-job-tabs{margin-bottom:16px}.job-tab{border:1px solid #E9C2D2;background:#fff;color:#7D3152;border-radius:999px;padding:9px 13px;font-weight:800}.job-tab.active{background:linear-gradient(135deg,#A91450,#D8407E);color:#fff;border-color:transparent}
+.visibility-label{font-size:10px;font-weight:850;border-radius:999px;padding:5px 8px}.visibility-label.visible{background:#EAF9F1;color:#237552}.visibility-label.hidden-vis{background:#FFF0F2;color:#A43854}
+.job-performance{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#806477;margin-top:8px}
+.candidate-pro-search{grid-template-columns:repeat(5,minmax(130px,1fr)) auto}
+.edit-job-modal{max-width:850px}
+@media(max-width:1100px){.recruiter-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.candidate-pro-search{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){.recruiter-metrics,.recruiter-quick,.candidate-pro-search{grid-template-columns:1fr}}

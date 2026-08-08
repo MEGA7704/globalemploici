@@ -351,6 +351,24 @@ async function getAppSettings(env){
   for(const row of (rows.results||[])) map[row.key]=row.value;
   return map;
 }
+
+async function ensureRecruiterProSchema(env){
+  const info=await env.JOB_DB.prepare("PRAGMA table_info(jobs)").all();
+  const have=new Set((info.results||[]).map(x=>x.name));
+  const cols={
+    education_required:'TEXT',
+    experience_required:'TEXT',
+    skills_required:'TEXT',
+    responsibilities:'TEXT',
+    candidate_profile:'TEXT',
+    work_schedule:'TEXT',
+    availability_required:'TEXT',
+    view_count:'INTEGER DEFAULT 0'
+  };
+  for(const [name,type] of Object.entries(cols)){
+    if(!have.has(name)) await env.JOB_DB.prepare(`ALTER TABLE jobs ADD COLUMN ${name} ${type}`).run();
+  }
+}
 async function handleRegister(req,env){
   const b=await req.json().catch(()=>({})); const role=b.role==='recruiter'?'recruiter':'candidate';
   const email=safeText(b.email,190).toLowerCase(), password=String(b.password||''), phone=safeText(b.phone,40);
@@ -498,16 +516,21 @@ async function api(req,env,url){
       return json({role,applications:Number(apps?.n||0),recruitment_requests:Number(offers?.n||0),unread:Number(unread?.n||0),documents:Number(docs?.n||0)});
     }
     if(role==='recruiter'){
-      await ensureRecruitmentSchema(env);
-      const [jobs,visible,apps,recruits,unread]=await Promise.all([
+      await ensureRecruitmentSchema(env); await ensureRecruiterProSchema(env);
+      const [jobs,visible,drafts,closed,apps,newApps,recruits,unread,views]=await Promise.all([
         env.JOB_DB.prepare('SELECT COUNT(*) n FROM jobs WHERE recruiter_id=?').bind(uid).first(),
         env.JOB_DB.prepare(`SELECT COUNT(*) n FROM jobs j WHERE j.recruiter_id=? AND j.status='published'
           AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=j.recruiter_id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now'))`).bind(uid).first(),
+        env.JOB_DB.prepare("SELECT COUNT(*) n FROM jobs WHERE recruiter_id=? AND status='draft'").bind(uid).first(),
+        env.JOB_DB.prepare("SELECT COUNT(*) n FROM jobs WHERE recruiter_id=? AND status='closed'").bind(uid).first(),
         env.JOB_DB.prepare('SELECT COUNT(*) n FROM applications a JOIN jobs j ON j.id=a.job_id WHERE j.recruiter_id=?').bind(uid).first(),
+        env.JOB_DB.prepare("SELECT COUNT(*) n FROM applications a JOIN jobs j ON j.id=a.job_id WHERE j.recruiter_id=? AND a.status='submitted'").bind(uid).first(),
         env.JOB_DB.prepare('SELECT COUNT(*) n FROM recruitment_requests WHERE recruiter_id=?').bind(uid).first(),
-        env.JOB_DB.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND is_read=0').bind(uid).first()
+        env.JOB_DB.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id=? AND is_read=0').bind(uid).first(),
+        env.JOB_DB.prepare('SELECT COALESCE(SUM(view_count),0) n FROM jobs WHERE recruiter_id=?').bind(uid).first()
       ]);
-      return json({role,jobs:Number(jobs?.n||0),visible_jobs:Number(visible?.n||0),applications:Number(apps?.n||0),recruitment_requests:Number(recruits?.n||0),unread:Number(unread?.n||0)});
+      return json({role,jobs:Number(jobs?.n||0),visible_jobs:Number(visible?.n||0),draft_jobs:Number(drafts?.n||0),closed_jobs:Number(closed?.n||0),
+        applications:Number(apps?.n||0),new_applications:Number(newApps?.n||0),recruitment_requests:Number(recruits?.n||0),unread:Number(unread?.n||0),views:Number(views?.n||0)});
     }
     await ensureRecruiterSchema(env);
     const [users,candidates,recruiters,paid,free,pendingSubs,pendingVerify,jobs,applications,newUsers]=await Promise.all([
@@ -544,7 +567,10 @@ async function api(req,env,url){
   }
   if(p==='/api/subscription-request'&&m==='POST'){
     const s=await requireSession(req,env), b=await req.json(); const plan=b.plan==='business'?'business':'standard', amount=plan==='business'?10000:1000; const sub=await currentSubscription(env,s.user.id);
-    if(sub && sub.plan!=='free' && sub.effective_status==='active') return json({error:'Vous avez déjà un abonnement payant valide.'},409);
+    if(sub && sub.plan!=='free' && sub.effective_status==='active'){
+      const remainingMs=new Date(sub.expires_at).getTime()-Date.now();
+      if(remainingMs>7*86400000) return json({error:'Votre abonnement payant est encore valide. Le renouvellement est disponible durant les 7 derniers jours.'},409);
+    }
     const pending=await env.JOB_DB.prepare("SELECT id FROM subscription_requests WHERE user_id=? AND status='pending'").bind(s.user.id).first(); if(pending) return json({error:'Une demande est déjà en attente.'},409);
     const payer=safeText(b.payer_phone,40), tx=safeText(b.transaction_id,120); if(!payer||!tx) return json({error:'Téléphone et ID transaction obligatoires.'},400);
     await env.JOB_DB.prepare('INSERT INTO subscription_requests(user_id,plan,amount,payer_phone,transaction_id) VALUES(?,?,?,?,?)').bind(s.user.id,plan,amount,payer,tx).run(); await audit(env,s.user.id,'SUBSCRIPTION_REQUEST','subscription',null,{plan,amount}); return json({ok:true});
@@ -574,7 +600,15 @@ async function api(req,env,url){
     await audit(env,s.user.id,'RECRUITER_VERIFICATION_SUBMITTED','recruiter',s.user.id);
     return json({ok:true,status:'pending'});
   }
-  if(p==='/api/recruiter/jobs'&&m==='GET'){ const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403); const rows=await env.JOB_DB.prepare('SELECT * FROM jobs WHERE recruiter_id=? ORDER BY id DESC').bind(s.user.id).all(); return json({jobs:rows.results||[]}); }
+  if(p==='/api/recruiter/jobs'&&m==='GET'){
+    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
+    await ensureRecruiterProSchema(env);
+    const rows=await env.JOB_DB.prepare(`SELECT j.*,
+      (SELECT COUNT(*) FROM applications a WHERE a.job_id=j.id) application_count,
+      CASE WHEN EXISTS(SELECT 1 FROM subscriptions sub WHERE sub.user_id=j.recruiter_id AND sub.status='active' AND sub.plan IN ('standard','business') AND datetime(sub.expires_at)>datetime('now')) AND j.status='published' THEN 1 ELSE 0 END public_visible
+      FROM jobs j WHERE j.recruiter_id=? ORDER BY j.id DESC`).bind(s.user.id).all();
+    return json({jobs:rows.results||[]});
+  }
   if(p==='/api/recruiter/applications'&&m==='GET'){
     const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
     await ensureCandidateSchema(env);
@@ -598,12 +632,26 @@ async function api(req,env,url){
       WHERE j.id=? AND j.status='published'
       AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=j.recruiter_id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now'))`).bind(id).first();
     if(!j) return json({error:'Offre introuvable ou non disponible.'},404);
+    await ensureRecruiterProSchema(env);
+    await env.JOB_DB.prepare('UPDATE jobs SET view_count=COALESCE(view_count,0)+1 WHERE id=?').bind(id).run();
     return json({job:j});
   }
   if(p==='/api/jobs'&&m==='POST'){
     const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
+    await ensureRecruiterProSchema(env);
     const b=await req.json(); if(!b.title||!b.description) return json({error:'Titre et description obligatoires.'},400);
-    const r=await env.JOB_DB.prepare('INSERT INTO jobs(recruiter_id,title,profession,category,description,employment_type,location,salary,vacancies,status,starts_at,closes_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id').bind(s.user.id,safeText(b.title,180),safeText(b.profession,150),safeText(b.category,150),safeText(b.description,4000),safeText(b.employment_type,100),safeText(b.location,180),safeText(b.salary,100),Number(b.vacancies||1),'published',safeText(b.starts_at,40)||null,safeText(b.closes_at,40)||null).first(); return json({ok:true,id:r.id},201);
+    const status=b.status==='draft'?'draft':'published';
+    const r=await env.JOB_DB.prepare(`INSERT INTO jobs(
+      recruiter_id,title,profession,category,description,employment_type,location,salary,vacancies,status,starts_at,closes_at,
+      education_required,experience_required,skills_required,responsibilities,candidate_profile,work_schedule,availability_required
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`)
+      .bind(s.user.id,safeText(b.title,180),safeText(b.profession,150),safeText(b.category,150),safeText(b.description,5000),
+      safeText(b.employment_type,80),safeText(b.location,180),safeText(b.salary,120),Math.max(1,Number(b.vacancies||1)),status,
+      safeText(b.starts_at,40),safeText(b.closes_at,40),safeText(b.education_required,180),safeText(b.experience_required,180),
+      safeText(b.skills_required,2200),safeText(b.responsibilities,3000),safeText(b.candidate_profile,2500),
+      safeText(b.work_schedule,500),safeText(b.availability_required,180)).first();
+    await audit(env,s.user.id,'JOB_CREATED','job',r.id,{status,title:safeText(b.title,180)});
+    return json({ok:true,id:r.id,status},201);
   }
   if(/^\/api\/jobs\/\d+\/apply$/.test(p)&&m==='POST'){
     const s=await requireSession(req,env);
@@ -628,15 +676,22 @@ async function api(req,env,url){
     await ensureCandidateSchema(env);
     const q=safeText(url.searchParams.get('q'),120).toLowerCase();
     const city=safeText(url.searchParams.get('city'),120).toLowerCase();
-    const likeQ=`%${q}%`, likeCity=`%${city}%`;
-    const rows=await env.JOB_DB.prepare(`SELECT u.id,p.first_name,p.last_name,p.profession,p.professional_title,p.specialty,p.city,p.country,p.experience_level,p.experience_years,p.skills,p.availability,p.photo,p.target_position,
+    const experience=safeText(url.searchParams.get('experience'),120).toLowerCase();
+    const availability=safeText(url.searchParams.get('availability'),120).toLowerCase();
+    const education=safeText(url.searchParams.get('education'),120).toLowerCase();
+    const likeQ=`%${q}%`,likeCity=`%${city}%`,likeExp=`%${experience}%`,likeAvail=`%${availability}%`,likeEdu=`%${education}%`;
+    const rows=await env.JOB_DB.prepare(`SELECT u.id,p.first_name,p.last_name,p.profession,p.professional_title,p.specialty,p.city,p.country,p.experience_level,p.experience_years,p.skills,p.availability,p.photo,p.target_position,p.education_level,
       (SELECT s.plan FROM subscriptions s WHERE s.user_id=u.id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now') ORDER BY datetime(s.expires_at) DESC LIMIT 1) plan
       FROM users u JOIN candidate_profiles p ON p.user_id=u.id
       WHERE u.role='candidate' AND u.status='active'
       AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=u.id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now'))
       AND (?='' OR lower(COALESCE(p.profession,'')) LIKE ? OR lower(COALESCE(p.professional_title,'')) LIKE ? OR lower(COALESCE(p.specialty,'')) LIKE ? OR lower(COALESCE(p.skills,'')) LIKE ?)
       AND (?='' OR lower(COALESCE(p.city,'')) LIKE ?)
-      ORDER BY u.id DESC LIMIT 200`).bind(q,likeQ,likeQ,likeQ,likeQ,city,likeCity).all();
+      AND (?='' OR lower(COALESCE(p.experience_level,'')) LIKE ? OR lower(COALESCE(p.experience_years,'')) LIKE ?)
+      AND (?='' OR lower(COALESCE(p.availability,'')) LIKE ?)
+      AND (?='' OR lower(COALESCE(p.education_level,'')) LIKE ? OR EXISTS(SELECT 1 FROM candidate_education ce WHERE ce.user_id=u.id AND lower(COALESCE(ce.diploma,'')) LIKE ?))
+      ORDER BY u.id DESC LIMIT 200`)
+      .bind(q,likeQ,likeQ,likeQ,likeQ,city,likeCity,experience,likeExp,likeExp,availability,likeAvail,education,likeEdu,likeEdu).all();
     return json({candidates:rows.results||[]});
   }
   if(/^\/api\/candidates\/\d+$/.test(p)&&m==='GET'){
@@ -688,7 +743,7 @@ async function api(req,env,url){
   if(/^\/api\/recruiter\/applications\/\d+\/status$/.test(p)&&m==='POST'){
     const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
     const id=Number(p.split('/')[4]), b=await req.json().catch(()=>({}));
-    const status=['submitted','reviewing','accepted','rejected'].includes(b.status)?b.status:null;
+    const status=['submitted','reviewing','shortlisted','interview','accepted','rejected'].includes(b.status)?b.status:null;
     if(!status) return json({error:'Statut invalide.'},400);
     const row=await env.JOB_DB.prepare(`SELECT a.candidate_id,j.title FROM applications a JOIN jobs j ON j.id=a.job_id WHERE a.id=? AND j.recruiter_id=?`).bind(id,s.user.id).first();
     if(!row) return json({error:'Candidature introuvable.'},404);
@@ -711,6 +766,45 @@ async function api(req,env,url){
       env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?,'recruitment','Réponse du candidat',?)").bind(row.recruiter_id,`Le candidat a répondu à votre proposition : ${status}.`)
     ]);
     return json({ok:true,status});
+  }
+  if(/^\/api\/recruiter\/jobs\/\d+$/.test(p)&&m==='GET'){
+    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
+    await ensureRecruiterProSchema(env);
+    const id=Number(p.split('/').pop());
+    const job=await env.JOB_DB.prepare('SELECT * FROM jobs WHERE id=? AND recruiter_id=?').bind(id,s.user.id).first();
+    if(!job) return json({error:'Offre introuvable.'},404);
+    const apps=await env.JOB_DB.prepare('SELECT COUNT(*) n FROM applications WHERE job_id=?').bind(id).first();
+    return json({job,application_count:Number(apps?.n||0)});
+  }
+  if(/^\/api\/recruiter\/jobs\/\d+$/.test(p)&&m==='PATCH'){
+    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
+    await ensureRecruiterProSchema(env);
+    const id=Number(p.split('/').pop()),b=await req.json().catch(()=>({}));
+    const owned=await env.JOB_DB.prepare('SELECT id FROM jobs WHERE id=? AND recruiter_id=?').bind(id,s.user.id).first();
+    if(!owned) return json({error:'Offre introuvable.'},404);
+    const status=['published','draft','suspended','closed'].includes(b.status)?b.status:'draft';
+    await env.JOB_DB.prepare(`UPDATE jobs SET title=?,profession=?,category=?,description=?,employment_type=?,location=?,salary=?,vacancies=?,status=?,starts_at=?,closes_at=?,
+      education_required=?,experience_required=?,skills_required=?,responsibilities=?,candidate_profile=?,work_schedule=?,availability_required=?,updated_at=? WHERE id=? AND recruiter_id=?`)
+      .bind(safeText(b.title,180),safeText(b.profession,150),safeText(b.category,150),safeText(b.description,5000),safeText(b.employment_type,80),
+      safeText(b.location,180),safeText(b.salary,120),Math.max(1,Number(b.vacancies||1)),status,safeText(b.starts_at,40),safeText(b.closes_at,40),
+      safeText(b.education_required,180),safeText(b.experience_required,180),safeText(b.skills_required,2200),safeText(b.responsibilities,3000),
+      safeText(b.candidate_profile,2500),safeText(b.work_schedule,500),safeText(b.availability_required,180),nowISO(),id,s.user.id).run();
+    await audit(env,s.user.id,'JOB_UPDATED','job',id,{status});
+    return json({ok:true,status});
+  }
+  if(/^\/api\/recruiter\/jobs\/\d+\/duplicate$/.test(p)&&m==='POST'){
+    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
+    await ensureRecruiterProSchema(env);
+    const id=Number(p.split('/')[4]);
+    const j=await env.JOB_DB.prepare('SELECT * FROM jobs WHERE id=? AND recruiter_id=?').bind(id,s.user.id).first();
+    if(!j) return json({error:'Offre introuvable.'},404);
+    const r=await env.JOB_DB.prepare(`INSERT INTO jobs(recruiter_id,title,profession,category,description,employment_type,location,salary,vacancies,status,starts_at,closes_at,
+      education_required,experience_required,skills_required,responsibilities,candidate_profile,work_schedule,availability_required)
+      VALUES(?,?,?,?,?,?,?,?,?,'draft',?,?,?,?,?,?,?,?,?) RETURNING id`)
+      .bind(s.user.id,`${safeText(j.title,165)} (copie)`,j.profession,j.category,j.description,j.employment_type,j.location,j.salary,j.vacancies,
+      j.starts_at,j.closes_at,j.education_required,j.experience_required,j.skills_required,j.responsibilities,j.candidate_profile,j.work_schedule,j.availability_required).first();
+    await audit(env,s.user.id,'JOB_DUPLICATED','job',r.id,{source_id:id});
+    return json({ok:true,id:r.id},201);
   }
   if(/^\/api\/recruiter\/jobs\/\d+\/status$/.test(p)&&m==='POST'){
     const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
@@ -786,6 +880,12 @@ async function api(req,env,url){
   }
   if(p==='/api/admin/recruiter-verifications'&&m==='GET'){ await requireAdmin(req,env); await ensureRecruiterSchema(env); const rows=await env.JOB_DB.prepare(`SELECT r.user_id,r.first_name,r.last_name,r.job_title,r.company_name,r.organization_type,r.sector,r.company_city,r.verification_status,r.verification_note,u.email,u.phone FROM recruiter_profiles r JOIN users u ON u.id=r.user_id WHERE r.verification_status='pending' ORDER BY r.updated_at DESC`).all(); return json({recruiters:rows.results||[]}); }
   if(/^\/api\/admin\/recruiters\/\d+\/(verify|reject)$/.test(p)&&m==='POST'){ const s=await requireAdmin(req,env), parts=p.split('/'), userId=Number(parts[4]), action=parts[5]; await ensureRecruiterSchema(env); const b=await req.json().catch(()=>({})); const status=action==='verify'?'verified':'unverified'; await env.JOB_DB.prepare('UPDATE recruiter_profiles SET verification_status=?,verification_note=?,email_verified=?,phone_verified=?,company_info_verified=?,official_document_verified=?,updated_at=? WHERE user_id=?').bind(status,action==='verify'?null:safeText(b.note,500)||'Vérification refusée',action==='verify'?1:0,action==='verify'?1:0,action==='verify'?1:0,action==='verify'?1:0,nowISO(),userId).run(); await env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'verification', ?, ?)").bind(userId,action==='verify'?'Entreprise vérifiée':'Vérification à compléter',action==='verify'?'Votre compte recruteur GLOBAL EMPLOI est maintenant vérifié.':'Votre demande de vérification nécessite des corrections. Consultez votre profil entreprise.').run(); await audit(env,s.user.id,action==='verify'?'RECRUITER_VERIFIED':'RECRUITER_VERIFICATION_REJECTED','recruiter',userId); return json({ok:true,status}); }
+  if(p==='/api/account/logout-all'&&m==='POST'){
+    const s=await requireSession(req,env);
+    await env.JOB_DB.prepare('UPDATE users SET session_version=session_version+1,updated_at=? WHERE id=?').bind(nowISO(),s.user.id).run();
+    await audit(env,s.user.id,'USER_LOGOUT_ALL','user',s.user.id);
+    return json({ok:true},200,{'set-cookie':clearCookie()});
+  }
   if(p==='/api/account'&&m==='DELETE'){
     const s=await requireSession(req,env);
     const uid=s.user.id;

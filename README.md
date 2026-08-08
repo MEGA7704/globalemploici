@@ -216,3 +216,16 @@ Les menus Super Admin sont reliés à des modules fonctionnels :
 - **Paramètres** : identité/support/prix/durées enregistrés dans D1 et sécurité du Super Admin. Les Secrets Cloudflare ne sont jamais exposés.
 
 La migration `migrations/0007_admin_modules.sql` ajoute les tables `app_settings` et `support_messages`. Le Worker sait aussi les créer automatiquement si nécessaire.
+
+
+## V17 — Compte Recruteur professionnel
+
+- Tableau de bord recruteur enrichi avec offres créées/visibles, brouillons, clôturées, vues, candidatures, nouvelles candidatures, propositions et notifications.
+- Publication d'offre complète avec prévisualisation, brouillon, niveau d'études, expérience, compétences, missions, profil recherché et conditions de travail.
+- Mes offres : filtres, visibilité réelle, vues, candidatures, modification, duplication, changement de statut et suppression.
+- Candidatures : pipeline Nouvelle / À l'étude / Présélectionnée / Entretien / Acceptée / Refusée.
+- Recherche candidats : métier, ville, expérience, études et disponibilité.
+- FREE peut consulter mais ne peut pas utiliser Je recrute, et ses publications restent masquées.
+- Messagerie séparée du support administratif.
+- Paramètres avec fermeture de toutes les sessions.
+- Le renouvellement d'un abonnement payant est permis durant ses 7 derniers jours.
