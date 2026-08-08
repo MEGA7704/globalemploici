@@ -290,7 +290,6 @@ async function render(view){
   const c=$('#viewContent'),t=$('#viewTitle');
   try{
     state.session=await api('/api/session');
-    await api('/api/data-linkage');
     buildAccountMenu();buildConnectedTopNav();updateSubChip();
   }catch(sessionError){
     if(sessionError?.code==='HTTP_401'){

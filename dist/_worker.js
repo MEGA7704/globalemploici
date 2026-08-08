@@ -1,278 +1,153 @@
 const enc = new TextEncoder();
 const dec = new TextDecoder();
+const V27_SCHEMA_VERSION='27.0.0';
+const LEGACY_PREFIX='legacy_v26_';
+const BUSINESS_TABLES=['users','candidate_profiles','candidate_education','candidate_experiences','candidate_languages','candidate_documents','recruiter_profiles','recruiter_documents','subscriptions','subscription_requests','jobs','applications','recruitment_requests','conversations','conversation_members','messages','notifications','audit_logs','app_settings','support_messages'];
 
-function json(data, status=200, headers={}) {
-  return new Response(JSON.stringify(data), {status, headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store',...headers}});
-}
-function nowISO(){ return new Date().toISOString(); }
-function addDays(days){ const d=new Date(); d.setUTCDate(d.getUTCDate()+days); return d.toISOString(); }
-function parseCookies(req){ const out={}; (req.headers.get('cookie')||'').split(';').forEach(p=>{const i=p.indexOf('='); if(i>0) out[p.slice(0,i).trim()]=decodeURIComponent(p.slice(i+1).trim());}); return out; }
-function b64(bytes){ return btoa(String.fromCharCode(...bytes)); }
-function fromB64(s){ return Uint8Array.from(atob(s), c=>c.charCodeAt(0)); }
-function safeText(v,max=4000){ return String(v??'').trim().slice(0,max); }
-function validEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
-function sessionCookie(token,maxAge=86400){ return `ge_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`; }
-function clearCookie(){ return 'ge_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'; }
+function json(data,status=200,headers={}){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store',...headers}})}
+function nowISO(){return new Date().toISOString()}
+function addDays(days){const d=new Date();d.setUTCDate(d.getUTCDate()+days);return d.toISOString()}
+function parseCookies(req){const out={};(req.headers.get('cookie')||'').split(';').forEach(p=>{const i=p.indexOf('=');if(i>0)out[p.slice(0,i).trim()]=decodeURIComponent(p.slice(i+1).trim())});return out}
+function b64(bytes){return btoa(String.fromCharCode(...bytes))}
+function fromB64(s){return Uint8Array.from(atob(s),c=>c.charCodeAt(0))}
+function safeText(v,max=4000){return String(v??'').trim().slice(0,max)}
+function validEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)}
+function sessionCookie(token,maxAge=86400){return `ge_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`}
+function clearCookie(){return 'ge_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'}
+function serverError(code,message,status=500){return json({error:message,code},status)}
+function qid(v){if(!/^[A-Za-z0-9_]+$/.test(v))throw new Error('Unsafe identifier');return `"${v}"`}
 
-function serverError(code, message, status=500){
-  return json({error:message, code}, status);
-}
+function assertBindings(env){const missing=[];if(!env.JOB_DB)missing.push('JOB_DB');if(!env.JOB_KV)missing.push('JOB_KV');if(missing.length){const e=new Error('Missing bindings: '+missing.join(', '));e.code='BINDING_MISSING';e.publicMessage='Configuration Cloudflare incomplète : '+missing.join(', ');throw e}}
+function assertAssetsBinding(env){if(!env.ASSETS){const e=new Error('Missing binding ASSETS');e.code='ASSETS_BINDING_MISSING';e.publicMessage='Le binding ASSETS de Cloudflare Pages est indisponible.';throw e}}
 
-function assertBindings(env){
-  // Les API de données ne doivent dépendre que de D1 et KV.
-  // ASSETS est vérifié séparément uniquement pour le rendu des fichiers statiques.
-  const missing=[];
-  if(!env.JOB_DB) missing.push('JOB_DB');
-  if(!env.JOB_KV) missing.push('JOB_KV');
-  if(missing.length){
-    const e=new Error(`Missing bindings: ${missing.join(', ')}`);
-    e.code='BINDING_MISSING';
-    e.publicMessage=`Configuration Cloudflare incomplète : binding ${missing.join(', ')} manquant.`;
-    throw e;
+const CANONICAL_SCHEMA_SQL=`
+PRAGMA foreign_keys=ON;
+CREATE TABLE IF NOT EXISTS v27_system_meta(key TEXT PRIMARY KEY,value TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,email TEXT NOT NULL UNIQUE,phone TEXT,password_hash TEXT NOT NULL,password_salt TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('candidate','recruiter','super_admin')),status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','suspended','disabled')),session_version INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,last_login_at TEXT);
+CREATE TABLE IF NOT EXISTS candidate_profiles(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,first_name TEXT,last_name TEXT,profession TEXT,specialty TEXT,city TEXT,location TEXT,education TEXT,experience_years INTEGER DEFAULT 0,skills TEXT,description TEXT,availability TEXT,work_types TEXT,photo TEXT,gender TEXT,birth_date TEXT,nationality TEXT,marital_status TEXT,whatsapp TEXT,country TEXT,professional_title TEXT,activity_domain TEXT,other_skills TEXT,experience_level TEXT,current_situation TEXT,driving_license INTEGER DEFAULT 0,driving_category TEXT,education_level TEXT,target_position TEXT,target_domain TEXT,desired_contracts TEXT,desired_city TEXT,mobility TEXT,desired_salary INTEGER,accepts_travel INTEGER DEFAULT 0,job_alerts INTEGER DEFAULT 0,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS candidate_education(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,diploma TEXT,specialty TEXT,institution TEXT,graduation_year TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS candidate_experiences(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,position TEXT,company TEXT,city_country TEXT,start_date TEXT,end_date TEXT,current_job INTEGER NOT NULL DEFAULT 0,responsibilities TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS candidate_languages(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,language TEXT NOT NULL,level TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS candidate_documents(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,document_type TEXT NOT NULL,file_name TEXT NOT NULL,mime_type TEXT NOT NULL,size_bytes INTEGER NOT NULL,content BLOB NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS recruiter_profiles(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,recruiter_type TEXT,company_name TEXT,activity TEXT,description TEXT,city TEXT,address TEXT,logo TEXT,first_name TEXT,last_name TEXT,job_title TEXT,whatsapp TEXT,country TEXT,photo TEXT,trade_name TEXT,organization_type TEXT,sector TEXT,main_domain TEXT,foundation_year TEXT,employee_count TEXT,company_country TEXT,company_city TEXT,district TEXT,website TEXT,social_page TEXT,rccm TEXT,tax_id TEXT,cnps TEXT,desired_trades TEXT,recruitment_domains TEXT,annual_recruitment_count TEXT,contract_types TEXT,recruitment_zones TEXT,international_recruitment INTEGER DEFAULT 0,marketing_alerts INTEGER DEFAULT 0,verification_status TEXT NOT NULL DEFAULT 'unverified',verification_note TEXT,email_verified INTEGER DEFAULT 0,phone_verified INTEGER DEFAULT 0,company_info_verified INTEGER DEFAULT 0,official_document_verified INTEGER DEFAULT 0,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS recruiter_documents(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,document_type TEXT NOT NULL,file_name TEXT NOT NULL,mime_type TEXT NOT NULL,size_bytes INTEGER NOT NULL,content BLOB NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS subscriptions(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,plan TEXT NOT NULL CHECK(plan IN ('free','standard','business')),started_at TEXT NOT NULL,expires_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','expired','cancelled')),created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS subscription_requests(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,plan TEXT NOT NULL CHECK(plan IN ('standard','business')),amount INTEGER NOT NULL,payer_phone TEXT NOT NULL,transaction_id TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),admin_id INTEGER REFERENCES users(id) ON DELETE SET NULL,admin_note TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,processed_at TEXT);
+CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY AUTOINCREMENT,recruiter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,title TEXT NOT NULL,profession TEXT,category TEXT,description TEXT NOT NULL,employment_type TEXT,location TEXT,salary TEXT,vacancies INTEGER DEFAULT 1,status TEXT NOT NULL DEFAULT 'published',starts_at TEXT,closes_at TEXT,education_required TEXT,experience_required TEXT,skills_required TEXT,responsibilities TEXT,candidate_profile TEXT,work_schedule TEXT,availability_required TEXT,view_count INTEGER DEFAULT 0,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS applications(id INTEGER PRIMARY KEY AUTOINCREMENT,job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,candidate_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,status TEXT NOT NULL DEFAULT 'submitted',message TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(job_id,candidate_id));
+CREATE TABLE IF NOT EXISTS recruitment_requests(id INTEGER PRIMARY KEY AUTOINCREMENT,recruiter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,candidate_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,status TEXT NOT NULL DEFAULT 'sent',message TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(recruiter_id,candidate_id));
+CREATE TABLE IF NOT EXISTS conversations(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS conversation_members(conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(conversation_id,user_id));
+CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,content TEXT NOT NULL,read_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,type TEXT NOT NULL,title TEXT NOT NULL,content TEXT NOT NULL,is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,action TEXT NOT NULL,target_type TEXT,target_id TEXT,metadata TEXT,ip_hash TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS app_settings(key TEXT PRIMARY KEY,value TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL);
+CREATE TABLE IF NOT EXISTS support_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,sender_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,recipient_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,subject TEXT,content TEXT NOT NULL,category TEXT NOT NULL DEFAULT 'support',status TEXT NOT NULL DEFAULT 'unread',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX IF NOT EXISTS v27_idx_subscriptions_user ON subscriptions(user_id,expires_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS v27_uq_pending_request_user ON subscription_requests(user_id) WHERE status='pending';
+CREATE INDEX IF NOT EXISTS v27_idx_jobs_recruiter ON jobs(recruiter_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS v27_idx_applications_candidate ON applications(candidate_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS v27_idx_applications_job ON applications(job_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS v27_idx_recruitment_recruiter ON recruitment_requests(recruiter_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS v27_idx_recruitment_candidate ON recruitment_requests(candidate_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS v27_idx_notifications_user ON notifications(user_id,is_read,created_at DESC);
+CREATE INDEX IF NOT EXISTS v27_idx_support_recipient ON support_messages(recipient_user_id,status,created_at DESC);
+CREATE INDEX IF NOT EXISTS v27_idx_support_sender ON support_messages(sender_user_id,created_at DESC);
+INSERT OR IGNORE INTO app_settings(key,value) VALUES ('platform_name','GLOBAL EMPLOI'),('support_whatsapp','+2250777041790'),('wave_payment_url','https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount='),('standard_price','1000'),('business_price','10000'),('free_days','0'),('standard_days','30'),('business_days','365'),('default_country','Côte d''Ivoire'),('contact_email','');
+`;
+
+let schemaReadyPromise=null;
+async function tableExists(env,name){const r=await env.JOB_DB.prepare("SELECT 1 ok FROM sqlite_master WHERE type='table' AND name=?").bind(name).first();return !!r}
+async function tableColumns(env,name){if(!await tableExists(env,name))return new Set();const r=await env.JOB_DB.prepare(`PRAGMA table_info(${name})`).all();return new Set((r.results||[]).map(x=>x.name))}
+
+async function archiveLegacyTables(env){
+  for(const name of BUSINESS_TABLES){
+    const legacy=LEGACY_PREFIX+name;
+    const hasCurrent=await tableExists(env,name),hasLegacy=await tableExists(env,legacy);
+    if(hasCurrent&&!hasLegacy) await env.JOB_DB.prepare(`ALTER TABLE ${qid(name)} RENAME TO ${qid(legacy)}`).run();
   }
 }
-function assertAssetsBinding(env){
-  if(!env.ASSETS){
-    const e=new Error('Missing binding: ASSETS');
-    e.code='ASSETS_BINDING_MISSING';
-    e.publicMessage='Le binding ASSETS de Cloudflare Pages est indisponible.';
-    throw e;
-  }
+async function importSimpleTable(env,src,dst,columns,where=''){
+  if(!await tableExists(env,src))return {table:src,imported:0,skipped:true};
+  const have=await tableColumns(env,src);const use=columns.filter(c=>have.has(c));if(!use.length)return {table:src,imported:0,skipped:true};
+  const sql=`INSERT OR IGNORE INTO ${qid(dst)}(${use.map(qid).join(',')}) SELECT ${use.map(c=>'s.'+qid(c)).join(',')} FROM ${qid(src)} s ${where}`;
+  const r=await env.JOB_DB.prepare(sql).run();return {table:src,imported:Number(r?.meta?.changes||0)}
 }
-
-async function checkDatabase(env){
-  try{
-    const required=['users','candidate_profiles','candidate_education','candidate_experiences','candidate_languages','candidate_documents','recruiter_profiles','recruiter_documents','subscriptions','subscription_requests','jobs','applications','recruitment_requests','conversations','conversation_members','messages','notifications','audit_logs','app_settings','support_messages'];
-    const rows=await env.JOB_DB.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
-    const have=new Set((rows.results||[]).map(r=>r.name));
-    const missing=required.filter(t=>!have.has(t));
-    if(missing.length){
-      const e=new Error('D1 schema incomplete: '+missing.join(', '));
-      e.code='D1_SCHEMA_INCOMPLETE';
-      e.publicMessage='Schéma D1 incomplet. Tables manquantes : '+missing.join(', ');
-      throw e;
+async function importLegacyData(env){
+  const report=[];
+  const lu=LEGACY_PREFIX+'users';
+  if(await tableExists(env,lu)){
+    const have=await tableColumns(env,lu);const cols=['id','email','phone','password_hash','password_salt','role','status','session_version','created_at','updated_at','last_login_at'].filter(c=>have.has(c));
+    if(['id','email','password_hash','password_salt','role'].every(c=>have.has(c))){const r=await env.JOB_DB.prepare(`INSERT OR IGNORE INTO users(${cols.map(qid).join(',')}) SELECT ${cols.map(c=>'s.'+qid(c)).join(',')} FROM ${qid(lu)} s WHERE s.role IN ('candidate','recruiter','super_admin')`).run();report.push({table:'users',imported:Number(r?.meta?.changes||0)})}
+  }
+  const simple=[
+    ['candidate_profiles',['id','user_id','first_name','last_name','profession','specialty','city','location','education','experience_years','skills','description','availability','work_types','photo','gender','birth_date','nationality','marital_status','whatsapp','country','professional_title','activity_domain','other_skills','experience_level','current_situation','driving_license','driving_category','education_level','target_position','target_domain','desired_contracts','desired_city','mobility','desired_salary','accepts_travel','job_alerts','created_at','updated_at'],"WHERE EXISTS(SELECT 1 FROM users u WHERE u.id=s.user_id AND u.role='candidate')"],
+    ['candidate_education',['id','user_id','diploma','specialty','institution','graduation_year','created_at'],"WHERE EXISTS(SELECT 1 FROM users u WHERE u.id=s.user_id AND u.role='candidate')"],
+    ['candidate_experiences',['id','user_id','position','company','city_country','start_date','end_date','current_job','responsibilities','created_at'],"WHERE EXISTS(SELECT 1 FROM users u WHERE u.id=s.user_id AND u.role='candidate')"],
+    ['candidate_languages',['id','user_id','language','level','created_at'],"WHERE EXISTS(SELECT 1 FROM users u WHERE u.id=s.user_id AND u.role='candidate')"],
+    ['candidate_documents',['id','user_id','document_type','file_name','mime_type','size_bytes','content','created_at'],"WHERE EXISTS(SELECT 1 FROM users u WHERE u.id=s.user_id AND u.role='candidate')"],
+    ['recruiter_profiles',['id','user_id','recruiter_type','company_name','activity','description','city','address','logo','first_name','last_name','job_title','whatsapp','country','photo','trade_name','organization_type','sector','main_domain','foundation_year','employee_count','company_country','company_city','district','website','social_page','rccm','tax_id','cnps','desired_trades','recruitment_domains','annual_recruitment_count','contract_types','recruitment_zones','international_recruitment','marketing_alerts','verification_status','verification_note','email_verified','phone_verified','company_info_verified','official_document_verified','created_at','updated_at'],"WHERE EXISTS(SELECT 1 FROM users u WHERE u.id=s.user_id AND u.role='recruiter')"],
+    ['recruiter_documents',['id','user_id','document_type','file_name','mime_type','size_bytes','content','created_at'],"WHERE EXISTS(SELECT 1 FROM users u WHERE u.id=s.user_id AND u.role='recruiter')"],
+    ['subscriptions',['id','user_id','plan','started_at','expires_at','status','created_at','updated_at'],"WHERE EXISTS(SELECT 1 FROM users u WHERE u.id=s.user_id)"],
+    ['subscription_requests',['id','user_id','plan','amount','payer_phone','transaction_id','status','admin_id','admin_note','created_at','processed_at'],"WHERE EXISTS(SELECT 1 FROM users u WHERE u.id=s.user_id)"],
+  ];
+  for(const [name,cols,where] of simple)report.push(await importSimpleTable(env,LEGACY_PREFIX+name,name,cols,where));
+  const lj=LEGACY_PREFIX+'jobs';
+  if(await tableExists(env,lj)){
+    const have=await tableColumns(env,lj);if(have.has('recruiter_id')&&have.has('title')&&have.has('description')){
+      const optional=['id','title','profession','category','description','employment_type','location','salary','vacancies','status','starts_at','closes_at','education_required','experience_required','skills_required','responsibilities','candidate_profile','work_schedule','availability_required','view_count','created_at','updated_at'].filter(c=>have.has(c));
+      const rid=`CASE WHEN EXISTS(SELECT 1 FROM users u WHERE u.id=j.recruiter_id AND u.role='recruiter') THEN j.recruiter_id ELSE (SELECT rp.user_id FROM ${qid(LEGACY_PREFIX+'recruiter_profiles')} rp JOIN users u ON u.id=rp.user_id AND u.role='recruiter' WHERE rp.id=j.recruiter_id LIMIT 1) END`;
+      const r=await env.JOB_DB.prepare(`INSERT OR IGNORE INTO jobs(${['recruiter_id',...optional].map(qid).join(',')}) SELECT ${[rid,...optional.map(c=>'j.'+qid(c))].join(',')} FROM ${qid(lj)} j WHERE COALESCE(${rid},0)>0`).run();report.push({table:'jobs',imported:Number(r?.meta?.changes||0)})
     }
-    return true;
-  }catch(err){
-    if(err && (err.code==='D1_NOT_INITIALIZED'||err.code==='D1_SCHEMA_INCOMPLETE')) throw err;
-    const e=new Error(`D1 unavailable: ${err?.message||err}`);
-    e.code='D1_UNAVAILABLE';
-    e.publicMessage='La base D1 est indisponible ou mal liée au projet.';
-    throw e;
   }
-}
-
-async function checkKV(env){
-  try{
-    const key='health:'+crypto.randomUUID();
-    await env.JOB_KV.put(key,'1',{expirationTtl:60});
-    const got=await env.JOB_KV.get(key);
-    await env.JOB_KV.delete(key);
-    if(got!=='1') throw new Error('KV read/write test failed');
-    return true;
-  }catch(err){
-    const e=new Error(`KV unavailable: ${err?.message||err}`);
-    e.code='KV_UNAVAILABLE';
-    e.publicMessage='Le namespace KV est indisponible ou mal lié au projet.';
-    throw e;
+  const la=LEGACY_PREFIX+'applications';
+  if(await tableExists(env,la)){
+    const have=await tableColumns(env,la);if(have.has('job_id')&&have.has('candidate_id')){
+      const optional=['id','status','message','created_at','updated_at'].filter(c=>have.has(c));
+      const cid=`CASE WHEN EXISTS(SELECT 1 FROM users u WHERE u.id=a.candidate_id AND u.role='candidate') THEN a.candidate_id ELSE (SELECT cp.user_id FROM ${qid(LEGACY_PREFIX+'candidate_profiles')} cp JOIN users u ON u.id=cp.user_id AND u.role='candidate' WHERE cp.id=a.candidate_id LIMIT 1) END`;
+      const r=await env.JOB_DB.prepare(`INSERT OR IGNORE INTO applications(${['job_id','candidate_id',...optional].map(qid).join(',')}) SELECT ${['a.job_id',cid,...optional.map(c=>'a.'+qid(c))].join(',')} FROM ${qid(la)} a WHERE EXISTS(SELECT 1 FROM jobs j WHERE j.id=a.job_id) AND COALESCE(${cid},0)>0`).run();report.push({table:'applications',imported:Number(r?.meta?.changes||0)})
+    }
   }
-}
-
-
-let runtimeSchemaReadyPromise = null;
-
-async function ensureCoreSchema(env){
-  await env.JOB_DB.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT NOT NULL UNIQUE,
-      phone TEXT,
-      password_hash TEXT NOT NULL,
-      password_salt TEXT NOT NULL,
-      role TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'active',
-      session_version INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      last_login_at TEXT
-    );
-    CREATE TABLE IF NOT EXISTS candidate_profiles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-      first_name TEXT,last_name TEXT,profession TEXT,specialty TEXT,city TEXT,location TEXT,education TEXT,experience_years INTEGER DEFAULT 0,
-      skills TEXT,description TEXT,availability TEXT,work_types TEXT,photo TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS recruiter_profiles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-      recruiter_type TEXT,company_name TEXT,activity TEXT,description TEXT,city TEXT,address TEXT,logo TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS subscriptions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,plan TEXT NOT NULL,
-      started_at TEXT NOT NULL,expires_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id,expires_at DESC);
-    CREATE TABLE IF NOT EXISTS subscription_requests (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,plan TEXT NOT NULL,amount INTEGER NOT NULL,
-      payer_phone TEXT NOT NULL,transaction_id TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',admin_id INTEGER REFERENCES users(id),admin_note TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,processed_at TEXT
-    );
-    CREATE TABLE IF NOT EXISTS jobs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,recruiter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,title TEXT NOT NULL,profession TEXT,category TEXT,
-      description TEXT NOT NULL,employment_type TEXT,location TEXT,salary TEXT,vacancies INTEGER DEFAULT 1,status TEXT NOT NULL DEFAULT 'published',
-      starts_at TEXT,closes_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS applications (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,candidate_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      status TEXT NOT NULL DEFAULT 'submitted',message TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(job_id,candidate_id)
-    );
-    CREATE TABLE IF NOT EXISTS conversations (id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-    CREATE TABLE IF NOT EXISTS conversation_members (conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(conversation_id,user_id));
-    CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,content TEXT NOT NULL,read_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-    CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,type TEXT NOT NULL,title TEXT NOT NULL,content TEXT NOT NULL,is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-    CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT,actor_user_id INTEGER REFERENCES users(id),action TEXT NOT NULL,target_type TEXT,target_id TEXT,metadata TEXT,ip_hash TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-  `);
-}
-
-async function ensureTableColumns(env,table,cols){
-  const info=await env.JOB_DB.prepare(`PRAGMA table_info(${table})`).all();
-  const have=new Set((info.results||[]).map(x=>x.name));
-  for(const [name,type] of Object.entries(cols)){
-    if(have.has(name)) continue;
-    try{ await env.JOB_DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`).run(); }
-    catch(err){ if(!/duplicate column/i.test(String(err?.message||err))) throw err; }
+  const lrr=LEGACY_PREFIX+'recruitment_requests';
+  if(await tableExists(env,lrr)){
+    const have=await tableColumns(env,lrr);if(have.has('recruiter_id')&&have.has('candidate_id')){
+      const optional=['id','status','message','created_at','updated_at'].filter(c=>have.has(c));
+      const rid=`CASE WHEN EXISTS(SELECT 1 FROM users u WHERE u.id=r.recruiter_id AND u.role='recruiter') THEN r.recruiter_id ELSE (SELECT rp.user_id FROM ${qid(LEGACY_PREFIX+'recruiter_profiles')} rp JOIN users u ON u.id=rp.user_id AND u.role='recruiter' WHERE rp.id=r.recruiter_id LIMIT 1) END`;
+      const cid=`CASE WHEN EXISTS(SELECT 1 FROM users u WHERE u.id=r.candidate_id AND u.role='candidate') THEN r.candidate_id ELSE (SELECT cp.user_id FROM ${qid(LEGACY_PREFIX+'candidate_profiles')} cp JOIN users u ON u.id=cp.user_id AND u.role='candidate' WHERE cp.id=r.candidate_id LIMIT 1) END`;
+      const r=await env.JOB_DB.prepare(`INSERT OR IGNORE INTO recruitment_requests(${['recruiter_id','candidate_id',...optional].map(qid).join(',')}) SELECT ${[rid,cid,...optional.map(c=>'r.'+qid(c))].join(',')} FROM ${qid(lrr)} r WHERE COALESCE(${rid},0)>0 AND COALESCE(${cid},0)>0`).run();report.push({table:'recruitment_requests',imported:Number(r?.meta?.changes||0)})
+    }
   }
-}
-
-async function ensureBaseColumns(env){
-  await ensureTableColumns(env,'users',{phone:'TEXT',status:"TEXT DEFAULT 'active'",session_version:'INTEGER DEFAULT 1',created_at:'TEXT',updated_at:'TEXT',last_login_at:'TEXT'});
-  await ensureTableColumns(env,'candidate_profiles',{first_name:'TEXT',last_name:'TEXT',profession:'TEXT',specialty:'TEXT',city:'TEXT',location:'TEXT',education:'TEXT',experience_years:'INTEGER DEFAULT 0',skills:'TEXT',description:'TEXT',availability:'TEXT',work_types:'TEXT',photo:'TEXT',created_at:'TEXT',updated_at:'TEXT'});
-  await ensureTableColumns(env,'recruiter_profiles',{recruiter_type:'TEXT',company_name:'TEXT',activity:'TEXT',description:'TEXT',city:'TEXT',address:'TEXT',logo:'TEXT',created_at:'TEXT',updated_at:'TEXT'});
-  await ensureTableColumns(env,'subscriptions',{plan:'TEXT',started_at:'TEXT',expires_at:'TEXT',status:"TEXT DEFAULT 'active'",created_at:'TEXT',updated_at:'TEXT'});
-  await ensureTableColumns(env,'subscription_requests',{plan:'TEXT',amount:'INTEGER',payer_phone:'TEXT',transaction_id:'TEXT',status:"TEXT DEFAULT 'pending'",admin_id:'INTEGER',admin_note:'TEXT',created_at:'TEXT',processed_at:'TEXT'});
-  await ensureTableColumns(env,'jobs',{title:'TEXT',profession:'TEXT',category:'TEXT',description:'TEXT',employment_type:'TEXT',location:'TEXT',salary:'TEXT',vacancies:'INTEGER DEFAULT 1',status:"TEXT DEFAULT 'published'",starts_at:'TEXT',closes_at:'TEXT',created_at:'TEXT',updated_at:'TEXT'});
-  await ensureTableColumns(env,'applications',{status:"TEXT DEFAULT 'submitted'",message:'TEXT',created_at:'TEXT',updated_at:'TEXT'});
-  await ensureTableColumns(env,'conversations',{created_at:'TEXT',updated_at:'TEXT'});
-  await ensureTableColumns(env,'messages',{content:'TEXT',read_at:'TEXT',created_at:'TEXT'});
-  await ensureTableColumns(env,'notifications',{type:'TEXT',title:'TEXT',content:'TEXT',is_read:'INTEGER DEFAULT 0',created_at:'TEXT'});
-  await ensureTableColumns(env,'audit_logs',{actor_user_id:'INTEGER',action:'TEXT',target_type:'TEXT',target_id:'TEXT',metadata:'TEXT',ip_hash:'TEXT',created_at:'TEXT'});
-}
-
-async function ensureDataLinkage(env){
-  // V26 : users.id est l'identifiant canonique de toutes les relations métier.
-  // 1) Chaque compte métier possède son profil et au moins un abonnement.
+  for(const [name,cols] of [['conversations',['id','created_at','updated_at']],['conversation_members',['conversation_id','user_id']],['messages',['id','conversation_id','sender_id','content','read_at','created_at']],['notifications',['id','user_id','type','title','content','is_read','created_at']],['audit_logs',['id','actor_user_id','action','target_type','target_id','metadata','ip_hash','created_at']],['app_settings',['key','value','updated_at','updated_by']],['support_messages',['id','sender_user_id','recipient_user_id','subject','content','category','status','created_at','updated_at']]]){
+    try{report.push(await importSimpleTable(env,LEGACY_PREFIX+name,name,cols))}catch(e){report.push({table:name,error:String(e?.message||e).slice(0,160)})}
+  }
   await env.JOB_DB.exec(`
-    INSERT INTO candidate_profiles(user_id,created_at,updated_at)
-    SELECT u.id,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
-    FROM users u
-    WHERE u.role='candidate'
-      AND NOT EXISTS(SELECT 1 FROM candidate_profiles p WHERE p.user_id=u.id);
-
-    INSERT INTO recruiter_profiles(user_id,created_at,updated_at,verification_status)
-    SELECT u.id,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,'unverified'
-    FROM users u
-    WHERE u.role='recruiter'
-      AND NOT EXISTS(SELECT 1 FROM recruiter_profiles p WHERE p.user_id=u.id);
-
-    INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status,created_at,updated_at)
-    SELECT u.id,'free',CURRENT_TIMESTAMP,'2099-12-31T23:59:59Z','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
-    FROM users u
-    WHERE u.role IN ('candidate','recruiter')
-      AND NOT EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=u.id);
+    INSERT OR IGNORE INTO candidate_profiles(user_id,created_at,updated_at) SELECT id,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP FROM users WHERE role='candidate';
+    INSERT OR IGNORE INTO recruiter_profiles(user_id,verification_status,created_at,updated_at) SELECT id,'unverified',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP FROM users WHERE role='recruiter';
+    INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status,created_at,updated_at) SELECT u.id,'free',CURRENT_TIMESTAMP,'2099-12-31T23:59:59Z','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP FROM users u WHERE u.role IN ('candidate','recruiter') AND NOT EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=u.id);
   `);
-
-  // 2) Répare les anciennes liaisons qui ont utilisé profile.id au lieu de users.id.
-  // On ne touche jamais une liaison déjà valide vers un utilisateur du bon rôle.
-  await env.JOB_DB.exec(`
-    UPDATE jobs
-    SET recruiter_id=(SELECT rp.user_id FROM recruiter_profiles rp WHERE rp.id=jobs.recruiter_id LIMIT 1),
-        updated_at=CURRENT_TIMESTAMP
-    WHERE NOT EXISTS(
-      SELECT 1 FROM users u WHERE u.id=jobs.recruiter_id AND u.role='recruiter'
-    )
-    AND EXISTS(
-      SELECT 1 FROM recruiter_profiles rp
-      JOIN users u ON u.id=rp.user_id AND u.role='recruiter'
-      WHERE rp.id=jobs.recruiter_id
-    );
-
-    UPDATE applications
-    SET candidate_id=(SELECT cp.user_id FROM candidate_profiles cp WHERE cp.id=applications.candidate_id LIMIT 1),
-        updated_at=CURRENT_TIMESTAMP
-    WHERE NOT EXISTS(
-      SELECT 1 FROM users u WHERE u.id=applications.candidate_id AND u.role='candidate'
-    )
-    AND EXISTS(
-      SELECT 1 FROM candidate_profiles cp
-      JOIN users u ON u.id=cp.user_id AND u.role='candidate'
-      WHERE cp.id=applications.candidate_id
-    );
-
-    UPDATE recruitment_requests
-    SET recruiter_id=(SELECT rp.user_id FROM recruiter_profiles rp WHERE rp.id=recruitment_requests.recruiter_id LIMIT 1),
-        updated_at=CURRENT_TIMESTAMP
-    WHERE NOT EXISTS(
-      SELECT 1 FROM users u WHERE u.id=recruitment_requests.recruiter_id AND u.role='recruiter'
-    )
-    AND EXISTS(
-      SELECT 1 FROM recruiter_profiles rp
-      JOIN users u ON u.id=rp.user_id AND u.role='recruiter'
-      WHERE rp.id=recruitment_requests.recruiter_id
-    );
-
-    UPDATE recruitment_requests
-    SET candidate_id=(SELECT cp.user_id FROM candidate_profiles cp WHERE cp.id=recruitment_requests.candidate_id LIMIT 1),
-        updated_at=CURRENT_TIMESTAMP
-    WHERE NOT EXISTS(
-      SELECT 1 FROM users u WHERE u.id=recruitment_requests.candidate_id AND u.role='candidate'
-    )
-    AND EXISTS(
-      SELECT 1 FROM candidate_profiles cp
-      JOIN users u ON u.id=cp.user_id AND u.role='candidate'
-      WHERE cp.id=recruitment_requests.candidate_id
-    );
-  `);
-
-  // 3) Contrôle réel des liaisons utilisées par les espaces Demandeur/Recruteur.
-  const [missingCandidateProfiles,missingRecruiterProfiles,badJobs,badApplications,badRecruiterRequests,badCandidateRequests]=await Promise.all([
-    env.JOB_DB.prepare("SELECT COUNT(*) n FROM users u WHERE u.role='candidate' AND NOT EXISTS(SELECT 1 FROM candidate_profiles p WHERE p.user_id=u.id)").first(),
-    env.JOB_DB.prepare("SELECT COUNT(*) n FROM users u WHERE u.role='recruiter' AND NOT EXISTS(SELECT 1 FROM recruiter_profiles p WHERE p.user_id=u.id)").first(),
-    env.JOB_DB.prepare("SELECT COUNT(*) n FROM jobs j WHERE NOT EXISTS(SELECT 1 FROM users u WHERE u.id=j.recruiter_id AND u.role='recruiter')").first(),
-    env.JOB_DB.prepare("SELECT COUNT(*) n FROM applications a WHERE NOT EXISTS(SELECT 1 FROM users u WHERE u.id=a.candidate_id AND u.role='candidate') OR NOT EXISTS(SELECT 1 FROM jobs j WHERE j.id=a.job_id)").first(),
-    env.JOB_DB.prepare("SELECT COUNT(*) n FROM recruitment_requests r WHERE NOT EXISTS(SELECT 1 FROM users u WHERE u.id=r.recruiter_id AND u.role='recruiter')").first(),
-    env.JOB_DB.prepare("SELECT COUNT(*) n FROM recruitment_requests r WHERE NOT EXISTS(SELECT 1 FROM users u WHERE u.id=r.candidate_id AND u.role='candidate')").first()
-  ]);
-  return {
-    missing_candidate_profiles:Number(missingCandidateProfiles?.n||0),
-    missing_recruiter_profiles:Number(missingRecruiterProfiles?.n||0),
-    orphan_jobs:Number(badJobs?.n||0),
-    orphan_applications:Number(badApplications?.n||0),
-    orphan_recruiter_requests:Number(badRecruiterRequests?.n||0),
-    orphan_candidate_requests:Number(badCandidateRequests?.n||0)
-  };
+  await env.JOB_DB.prepare("INSERT INTO v27_system_meta(key,value,updated_at) VALUES('legacy_import_report',?,CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(JSON.stringify(report).slice(0,14000)).run();
 }
 
 async function ensureRuntimeSchema(env){
-  if(!runtimeSchemaReadyPromise){
-    runtimeSchemaReadyPromise=(async()=>{
-      // V26 : aucune erreur de schéma ou de liaison n'est masquée.
-      // Si une étape obligatoire échoue, l'API renvoie l'erreur réelle au lieu d'une page vide.
-      await ensureCoreSchema(env);
-      await ensureBaseColumns(env);
-      await ensureCandidateSchema(env);
-      await ensureRecruiterSchema(env);
-      await ensureRecruitmentSchema(env);
-      await ensureRecruiterProSchema(env);
-      await ensureAdminModuleSchema(env);
-      const linkage=await ensureDataLinkage(env);
+  if(!schemaReadyPromise){schemaReadyPromise=(async()=>{
+    try{
+      await env.JOB_DB.exec("CREATE TABLE IF NOT EXISTS v27_system_meta(key TEXT PRIMARY KEY,value TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);");
+      const current=await env.JOB_DB.prepare("SELECT value FROM v27_system_meta WHERE key='schema_version'").first();
+      if(current?.value!==V27_SCHEMA_VERSION){
+        await archiveLegacyTables(env);
+        await env.JOB_DB.exec(CANONICAL_SCHEMA_SQL);
+        await importLegacyData(env);
+        await env.JOB_DB.prepare("INSERT INTO v27_system_meta(key,value,updated_at) VALUES('schema_version',?,CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(V27_SCHEMA_VERSION).run();
+      }
       await checkDatabase(env);
-      return {ok:true,linkage};
-    })();
-    runtimeSchemaReadyPromise.catch(()=>{ runtimeSchemaReadyPromise=null; });
-  }
-  return runtimeSchemaReadyPromise;
+      return true;
+    }catch(err){schemaReadyPromise=null;const e=new Error(`V27 bootstrap failed: ${err?.message||err}`);e.code='SCHEMA_BOOTSTRAP_FAILED';e.publicMessage='La reconstruction V27 de la base D1 a échoué.';throw e}
+  })()}
+  return schemaReadyPromise
 }
+async function checkDatabase(env){const required=BUSINESS_TABLES;const rows=await env.JOB_DB.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();const have=new Set((rows.results||[]).map(r=>r.name));const missing=required.filter(t=>!have.has(t));if(missing.length){const e=new Error('V27 missing tables: '+missing.join(', '));e.code='D1_SCHEMA_INCOMPLETE';e.publicMessage='Schéma D1 V27 incomplet : '+missing.join(', ');throw e}return true}
+async function checkKV(env){const key='v27:health:'+crypto.randomUUID();await env.JOB_KV.put(key,'1',{expirationTtl:60});const got=await env.JOB_KV.get(key);await env.JOB_KV.delete(key);if(got!=='1'){const e=new Error('KV read/write failed');e.code='KV_UNAVAILABLE';e.publicMessage='Le namespace KV ne répond pas correctement.';throw e}return true}
+async function ensureDataLinkage(env){const q=async(sql)=>Number((await env.JOB_DB.prepare(sql).first())?.n||0);return {missing_candidate_profiles:await q("SELECT COUNT(*) n FROM users u WHERE u.role='candidate' AND NOT EXISTS(SELECT 1 FROM candidate_profiles p WHERE p.user_id=u.id)"),missing_recruiter_profiles:await q("SELECT COUNT(*) n FROM users u WHERE u.role='recruiter' AND NOT EXISTS(SELECT 1 FROM recruiter_profiles p WHERE p.user_id=u.id)"),orphan_jobs:await q("SELECT COUNT(*) n FROM jobs j WHERE NOT EXISTS(SELECT 1 FROM users u WHERE u.id=j.recruiter_id AND u.role='recruiter')"),orphan_applications:await q("SELECT COUNT(*) n FROM applications a WHERE NOT EXISTS(SELECT 1 FROM jobs j WHERE j.id=a.job_id) OR NOT EXISTS(SELECT 1 FROM users u WHERE u.id=a.candidate_id AND u.role='candidate')"),orphan_recruitment_requests:await q("SELECT COUNT(*) n FROM recruitment_requests r WHERE NOT EXISTS(SELECT 1 FROM users u WHERE u.id=r.recruiter_id AND u.role='recruiter') OR NOT EXISTS(SELECT 1 FROM users u WHERE u.id=r.candidate_id AND u.role='candidate')")}}
 
 async function hashPassword(password, saltBytes){
   const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
@@ -318,50 +193,10 @@ async function currentSubscription(env,userId){
 }
 
 async function ensureCandidateSchema(env){
-  const info=await env.JOB_DB.prepare("PRAGMA table_info(candidate_profiles)").all();
-  const have=new Set((info.results||[]).map(x=>x.name));
-  const cols={gender:'TEXT',birth_date:'TEXT',nationality:'TEXT',marital_status:'TEXT',whatsapp:'TEXT',country:'TEXT',professional_title:'TEXT',activity_domain:'TEXT',other_skills:'TEXT',experience_level:'TEXT',current_situation:'TEXT',driving_license:'INTEGER DEFAULT 0',driving_category:'TEXT',education_level:'TEXT',target_position:'TEXT',target_domain:'TEXT',desired_contracts:'TEXT',desired_city:'TEXT',mobility:'TEXT',desired_salary:'INTEGER',accepts_travel:'INTEGER DEFAULT 0',job_alerts:'INTEGER DEFAULT 0'};
-  for(const [name,type] of Object.entries(cols)) if(!have.has(name)){ try{ await env.JOB_DB.prepare(`ALTER TABLE candidate_profiles ADD COLUMN ${name} ${type}`).run(); }catch(err){ if(!/duplicate column/i.test(String(err?.message||err))) throw err; } }
-  await env.JOB_DB.exec(`
-    CREATE TABLE IF NOT EXISTS candidate_education (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,diploma TEXT,specialty TEXT,institution TEXT,graduation_year TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-    CREATE INDEX IF NOT EXISTS idx_candidate_education_user ON candidate_education(user_id);
-    CREATE TABLE IF NOT EXISTS candidate_experiences (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,position TEXT,company TEXT,city_country TEXT,start_date TEXT,end_date TEXT,current_job INTEGER NOT NULL DEFAULT 0,responsibilities TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-    CREATE INDEX IF NOT EXISTS idx_candidate_experiences_user ON candidate_experiences(user_id);
-    CREATE TABLE IF NOT EXISTS candidate_languages (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,language TEXT NOT NULL,level TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-    CREATE INDEX IF NOT EXISTS idx_candidate_languages_user ON candidate_languages(user_id);
-    CREATE TABLE IF NOT EXISTS candidate_documents (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,document_type TEXT NOT NULL,file_name TEXT NOT NULL,mime_type TEXT NOT NULL,size_bytes INTEGER NOT NULL,content BLOB NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-    CREATE INDEX IF NOT EXISTS idx_candidate_documents_user ON candidate_documents(user_id,document_type);
-  `);
-
+  return true;
 }
 async function ensureRecruiterSchema(env){
-  const info=await env.JOB_DB.prepare("PRAGMA table_info(recruiter_profiles)").all();
-  const have=new Set((info.results||[]).map(x=>x.name));
-  const cols={
-    first_name:'TEXT',last_name:'TEXT',job_title:'TEXT',whatsapp:'TEXT',country:'TEXT',photo:'TEXT',
-    trade_name:'TEXT',organization_type:'TEXT',sector:'TEXT',main_domain:'TEXT',foundation_year:'TEXT',
-    employee_count:'TEXT',company_country:'TEXT',company_city:'TEXT',district:'TEXT',website:'TEXT',social_page:'TEXT',
-    rccm:'TEXT',tax_id:'TEXT',cnps:'TEXT',desired_trades:'TEXT',recruitment_domains:'TEXT',
-    annual_recruitment_count:'TEXT',contract_types:'TEXT',recruitment_zones:'TEXT',
-    international_recruitment:'INTEGER DEFAULT 0',marketing_alerts:'INTEGER DEFAULT 0',
-    verification_status:"TEXT DEFAULT 'unverified'",verification_note:'TEXT',
-    email_verified:'INTEGER DEFAULT 0',phone_verified:'INTEGER DEFAULT 0',
-    company_info_verified:'INTEGER DEFAULT 0',official_document_verified:'INTEGER DEFAULT 0'
-  };
-  for(const [name,type] of Object.entries(cols)) if(!have.has(name)){ try{ await env.JOB_DB.prepare(`ALTER TABLE recruiter_profiles ADD COLUMN ${name} ${type}`).run(); }catch(err){ if(!/duplicate column/i.test(String(err?.message||err))) throw err; } }
-  await env.JOB_DB.exec(`
-    CREATE TABLE IF NOT EXISTS recruiter_documents (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      document_type TEXT NOT NULL,
-      file_name TEXT NOT NULL,
-      mime_type TEXT NOT NULL,
-      size_bytes INTEGER NOT NULL,
-      content BLOB NOT NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE INDEX IF NOT EXISTS idx_recruiter_documents_user ON recruiter_documents(user_id,document_type);
-  `);
+  return true;
 }
 async function recruiterCompleteness(env,userId){
   await ensureRecruiterSchema(env);
@@ -407,20 +242,7 @@ async function candidateCompleteness(env,userId){
 
 
 async function ensureRecruitmentSchema(env){
-  await env.JOB_DB.exec(`
-    CREATE TABLE IF NOT EXISTS recruitment_requests (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      recruiter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      candidate_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      status TEXT NOT NULL DEFAULT 'sent',
-      message TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(recruiter_id,candidate_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_recruitment_requests_recruiter ON recruitment_requests(recruiter_id,created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_recruitment_requests_candidate ON recruitment_requests(candidate_id,created_at DESC);
-  `);
+  return true;
 }
 async function deleteUserAndRelatedData(env,userId){
   await ensureCandidateSchema(env);
@@ -506,42 +328,9 @@ async function cleanupExpiredFreeAccounts(env){
 }
 
 async function ensureAdminModuleSchema(env){
-  await env.JOB_DB.exec(`
-    CREATE TABLE IF NOT EXISTS app_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL
-    );
-    CREATE TABLE IF NOT EXISTS support_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      sender_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      recipient_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      subject TEXT,
-      content TEXT NOT NULL,
-      category TEXT NOT NULL DEFAULT 'support',
-      status TEXT NOT NULL DEFAULT 'unread',
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE INDEX IF NOT EXISTS idx_support_messages_recipient ON support_messages(recipient_user_id,status,created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_support_messages_sender ON support_messages(sender_user_id,created_at DESC);
-    INSERT OR IGNORE INTO app_settings(key,value) VALUES
-      ('platform_name','GLOBAL EMPLOI'),
-      ('support_whatsapp','+2250777041790'),
-      ('wave_payment_url','https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount='),
-      ('standard_price','1000'),
-      ('business_price','10000'),
-      ('free_days','7'),
-      ('standard_days','30'),
-      ('business_days','365'),
-      ('default_country','Côte d''Ivoire'),
-      ('contact_email','');
-  `);
+  return true;
 }
 async function ensureAdminDataReady(env){
-  // V26 : l'Admin utilise le même schéma/lien canonique que les autres rôles.
-  // Aucune exception n'est avalée : une liaison cassée doit être diagnostiquée et corrigée.
   await ensureRuntimeSchema(env);
   return ensureDataLinkage(env);
 }
@@ -554,21 +343,7 @@ async function getAppSettings(env){
 }
 
 async function ensureRecruiterProSchema(env){
-  const info=await env.JOB_DB.prepare("PRAGMA table_info(jobs)").all();
-  const have=new Set((info.results||[]).map(x=>x.name));
-  const cols={
-    education_required:'TEXT',
-    experience_required:'TEXT',
-    skills_required:'TEXT',
-    responsibilities:'TEXT',
-    candidate_profile:'TEXT',
-    work_schedule:'TEXT',
-    availability_required:'TEXT',
-    view_count:'INTEGER DEFAULT 0'
-  };
-  for(const [name,type] of Object.entries(cols)){
-    if(!have.has(name)){ try{ await env.JOB_DB.prepare(`ALTER TABLE jobs ADD COLUMN ${name} ${type}`).run(); }catch(err){ if(!/duplicate column/i.test(String(err?.message||err))) throw err; } }
-  }
+  return true;
 }
 async function handleRegister(req,env){
   const b=await req.json().catch(()=>({})); const role=b.role==='recruiter'?'recruiter':'candidate';
@@ -1501,8 +1276,6 @@ export default {
       if(url.pathname.startsWith('/api/')){
         // V26 : schéma et liaisons obligatoires, sans masquer les erreurs.
         await ensureRuntimeSchema(env);
-        await cleanupExpiredFreeAccounts(env);
-        await ensureDataLinkage(env);
         const response=await api(request,env,url);
         const h=new Headers(response.headers);
         h.set('cache-control','no-store');
