@@ -29,8 +29,13 @@ class KV{
 const env={JOB_DB:new D1(),JOB_KV:new KV(),ASSETS:{fetch:async()=>new Response('asset')},SUPER_ADMIN_EMAIL:'admin@example.test',SUPER_ADMIN_PASSWORD:'AdminPass!123',SUPER_ADMIN_RECOVERY_TOKEN:'Recover!123'};
 
 async function call(path,{method='GET',body,cookie,headers={}}={}){
-  const h=new Headers(headers); if(cookie) h.set('cookie',cookie); if(body && !(body instanceof FormData)) h.set('content-type','application/json');
-  const req=new Request('https://example.test'+path,{method,headers:h,body:body instanceof FormData?body:body?JSON.stringify(body):undefined});
+  const h=new Headers(headers);
+  if(cookie) h.set('cookie',cookie);
+  let requestBody;
+  if(body instanceof FormData){ requestBody=body; }
+  else if(body instanceof URLSearchParams){ h.set('content-type','application/x-www-form-urlencoded;charset=UTF-8'); requestBody=body.toString(); }
+  else if(body){ h.set('content-type','application/json'); requestBody=JSON.stringify(body); }
+  const req=new Request('https://example.test'+path,{method,headers:h,body:requestBody});
   const res=await worker.fetch(req,env); const txt=await res.text(); let data; try{data=txt?JSON.parse(txt):{}}catch{data={text:txt}}
   if(res.status>=400) console.error('FAIL',method,path,res.status,data);
   return {status:res.status,data,cookie:res.headers.get('set-cookie')};
@@ -45,6 +50,10 @@ r=await ok('/api/register',{method:'POST',body:{role:'candidate',email:'candidat
 r=await ok('/api/register',{method:'POST',body:{role:'recruiter',email:'recruiter@test.ci',password:'Recruiter!123',phone:'0708091011',first_name:'Jean',last_name:'Konan',job_title:'RH',country:"Côte d'Ivoire",terms:true,privacy:true}}); const recCookie=r.cookie; const recId=r.data.user.id;
 assert.ok(candId&&recId);
 r=await ok('/api/register',{method:'POST',body:{role:'candidate',email:'candidate2@test.ci',password:'Candidate2!123',phone:'0101010101',first_name:'Mireille',last_name:'Yao',birth_date:'2001-02-02',nationality:'Ivoirienne',city:'Abidjan',country:"Côte d'Ivoire",terms:true}}); const cand2Cookie=r.cookie; const cand2Id=r.data.user.id;
+// V29 : secours natif HTML en POST urlencoded, sans JavaScript.
+const nativeForm=new URLSearchParams({role:'recruiter',email:'native-recruiter@test.ci',password:'NativeRecruiter!123',phone:'0505050505',first_name:'Nadia',last_name:'Koffi',job_title:'Gérante',country:"Côte d'Ivoire",terms:'1',privacy:'1'});
+const nativeResult=await call('/api/register',{method:'POST',body:nativeForm});
+assert.equal(nativeResult.status,303); assert.ok(nativeResult.cookie,'native registration cookie');
 await ok('/api/subscription-request',{method:'POST',cookie:cand2Cookie,body:{plan:'standard',payer_phone:'0101010101',transaction_id:'TX-002'}});
 
 console.log('3. admin login + paid plans');

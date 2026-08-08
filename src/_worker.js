@@ -345,8 +345,21 @@ async function getAppSettings(env){
 async function ensureRecruiterProSchema(env){
   return true;
 }
+async function readRegisterBody(req){
+  const ct=String(req.headers.get('content-type')||'').toLowerCase();
+  if(ct.includes('application/json')) return {body:await req.json().catch(()=>({})),nativeForm:false};
+  if(ct.includes('application/x-www-form-urlencoded')||ct.includes('multipart/form-data')){
+    const fd=await req.formData().catch(()=>null);
+    return {body:fd?Object.fromEntries(fd):{},nativeForm:true};
+  }
+  return {body:{},nativeForm:false};
+}
 async function handleRegister(req,env){
-  const b=await req.json().catch(()=>({})); const role=b.role==='recruiter'?'recruiter':'candidate';
+  const parsed=await readRegisterBody(req);
+  const b=parsed.body; const role=b.role==='recruiter'?'recruiter':'candidate';
+  // Les cases HTML natives arrivent comme "1" ou "on".
+  b.terms=b.terms===true||b.terms==='1'||b.terms==='on';
+  b.privacy=b.privacy===true||b.privacy==='1'||b.privacy==='on';
   const email=safeText(b.email,190).toLowerCase(), password=String(b.password||''), phone=safeText(b.phone,40);
   if(!validEmail(email)||password.length<8) return json({error:'E-mail invalide ou mot de passe trop court.'},400);
   if(role==='candidate' && (!b.terms || !safeText(b.last_name,100) || !safeText(b.first_name,100) || !safeText(b.birth_date,20) || !safeText(b.nationality,100) || !phone || !safeText(b.city,120) || !safeText(b.country,100))) return json({error:'Veuillez compléter toutes les informations personnelles obligatoires et accepter les conditions.'},400);
@@ -364,6 +377,15 @@ async function handleRegister(req,env){
     await env.JOB_DB.prepare('INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status) VALUES(?,?,?,?,?)').bind(userId,'free',nowISO(),expires,'active').run();
     const r=await env.JOB_DB.prepare('SELECT id,email,phone,role,status,session_version FROM users WHERE id=?').bind(userId).first();
     const token=await createSession(env,r); await audit(env,r.id,'REGISTER','user',r.id,{role});
+    if(parsed.nativeForm){
+      return new Response(null,{status:303,headers:{
+        'location':'/#home',
+        'set-cookie':sessionCookie(token),
+        'cache-control':'no-store',
+        'referrer-policy':'no-referrer',
+        'x-content-type-options':'nosniff'
+      }});
+    }
     return json({ok:true,user:{id:r.id,email:r.email,role:r.role},subscription:await currentSubscription(env,r.id)},201,{'set-cookie':sessionCookie(token)});
   }catch(err){
     if(userId){ try{ await env.JOB_DB.prepare('DELETE FROM users WHERE id=?').bind(userId).run(); }catch{} }

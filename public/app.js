@@ -34,6 +34,82 @@ function esc(value){
 
 // V28 — formulaire d'inscription réellement défini. La V27 appelait registerModal()
 // depuis plusieurs boutons sans jamais fournir la fonction.
+function registrationFeedback(message='',type='error'){
+  const box=$('#registerFeedback');
+  if(!box) return;
+  box.textContent=message;
+  box.className=`form-feedback ${message?'':'hidden'} ${type}`;
+}
+function validateRegistrationForm(form,isCandidate){
+  const get=name=>form.elements.namedItem(name);
+  const required=[
+    ['last_name','Veuillez saisir votre nom.'],
+    ['first_name','Veuillez saisir vos prénoms.'],
+    ...(isCandidate?[
+      ['birth_date','Veuillez saisir votre date de naissance.'],
+      ['nationality','Veuillez saisir votre nationalité.'],
+      ['city','Veuillez saisir votre ville de résidence.']
+    ]:[['job_title','Veuillez saisir votre fonction ou votre poste.']]),
+    ['country','Veuillez saisir votre pays.'],
+    ['phone','Veuillez saisir votre numéro de téléphone.'],
+    ['email','Veuillez saisir votre adresse e-mail.'],
+    ['password','Veuillez saisir un mot de passe.']
+  ];
+  for(const [name,message] of required){
+    const el=get(name);
+    if(!el || !String(el.value||'').trim()) return {ok:false,el,message};
+  }
+  const email=get('email');
+  if(email && !email.checkValidity()) return {ok:false,el:email,message:'Veuillez saisir une adresse e-mail valide.'};
+  const password=get('password');
+  if(password && String(password.value||'').length<8) return {ok:false,el:password,message:'Le mot de passe doit contenir au moins 8 caractères.'};
+  const terms=get('terms');
+  if(!terms?.checked) return {ok:false,el:terms,message:'Veuillez accepter les conditions d’utilisation.'};
+  if(!isCandidate){
+    const privacy=get('privacy');
+    if(!privacy?.checked) return {ok:false,el:privacy,message:'Veuillez accepter la politique de confidentialité.'};
+  }
+  return {ok:true};
+}
+async function submitRegistrationForm(form,role){
+  const isCandidate=role==='candidate';
+  registrationFeedback('');
+  const validation=validateRegistrationForm(form,isCandidate);
+  if(!validation.ok){
+    registrationFeedback(validation.message,'error');
+    validation.el?.focus?.();
+    validation.el?.scrollIntoView?.({block:'center',behavior:'smooth'});
+    return;
+  }
+  const submit=form.querySelector('[type="submit"]');
+  const oldText=submit?.textContent||'';
+  if(submit){submit.disabled=true;submit.setAttribute('aria-busy','true');submit.textContent='Création du compte…';}
+  const fd=new FormData(form),payload=Object.fromEntries(fd.entries());
+  payload.role=role;
+  payload.terms=fd.has('terms');
+  payload.privacy=isCandidate?true:fd.has('privacy');
+  try{
+    const result=await api('/api/register',{method:'POST',body:JSON.stringify(payload)});
+    registrationFeedback('Compte créé avec succès. Ouverture de votre espace…','success');
+    let bootOk=true;
+    try{await boot();}catch(bootErr){
+      bootOk=false;
+      console.error('GLOBAL_EMPLOI_POST_REGISTER_BOOT_ERROR',bootErr);
+    }
+    closeModal();
+    toast(bootOk?'Compte créé avec succès.':'Compte créé. Reconnectez-vous pour ouvrir votre espace.');
+    return result;
+  }catch(err){
+    const suffix=[err.code?`Code ${err.code}`:'',err.reference?`Réf. ${err.reference}`:''].filter(Boolean).join(' • ');
+    registrationFeedback(`${err.message||'Impossible de créer le compte.'}${suffix?` • ${suffix}`:''}`,'error');
+    console.error('GLOBAL_EMPLOI_REGISTER_CLIENT_ERROR',err);
+  }finally{
+    if(submit){submit.disabled=false;submit.removeAttribute('aria-busy');submit.textContent=oldText;}
+  }
+}
+
+// V29 — inscription robuste : soumission JS + POST natif de secours, validation visible
+// et état explicite du bouton pendant l'enregistrement.
 function registerModal(initialRole='candidate'){
   let role=initialRole==='recruiter'?'recruiter':'candidate';
   const render=()=>{
@@ -46,8 +122,9 @@ function registerModal(initialRole='candidate'){
         <button type="button" class="tab ${candidate?'active':''}" data-register-role="candidate">Je cherche un emploi</button>
         <button type="button" class="tab ${!candidate?'active':''}" data-register-role="recruiter">Je recrute</button>
       </div>
-      <form id="registerForm" class="form-grid" autocomplete="on">
+      <form id="registerForm" class="form-grid" method="post" action="/api/register" autocomplete="on" novalidate>
         <input type="hidden" name="role" value="${role}">
+        <div id="registerFeedback" class="form-feedback hidden full" role="alert" aria-live="polite"></div>
         <div class="field"><label>Nom *</label><input name="last_name" required autocomplete="family-name"></div>
         <div class="field"><label>Prénoms *</label><input name="first_name" required autocomplete="given-name"></div>
         ${candidate?`
@@ -64,9 +141,9 @@ function registerModal(initialRole='candidate'){
         <div class="field"><label>WhatsApp</label><input name="whatsapp" type="tel"></div>
         <div class="field full"><label>E-mail *</label><input name="email" type="email" autocomplete="username" required></div>
         <div class="field full"><label>Mot de passe *</label><div class="password-wrap"><input id="registerPassword" name="password" type="password" minlength="8" autocomplete="new-password" required><button class="password-toggle" type="button" data-toggle-password="registerPassword" aria-label="Afficher le mot de passe">◉</button></div><small>8 caractères minimum.</small></div>
-        <label class="check-row full"><input type="checkbox" name="terms" required> J’accepte les conditions d’utilisation.</label>
-        ${candidate?'':`<label class="check-row full"><input type="checkbox" name="privacy" required> J’accepte la politique de confidentialité.</label>`}
-        <div class="full"><button class="btn primary big" type="submit">Créer mon compte ${candidate?'demandeur':'recruteur'}</button></div>
+        <label class="check-row full"><input type="checkbox" name="terms" value="1" required> J’accepte les conditions d’utilisation.</label>
+        ${candidate?'':`<label class="check-row full"><input type="checkbox" name="privacy" value="1" required> J’accepte la politique de confidentialité.</label>`}
+        <div class="full"><button id="registerSubmit" class="btn primary big" type="submit">Créer mon compte ${candidate?'demandeur':'recruteur'}</button></div>
       </form>
       <p class="centered-login">Déjà inscrit ? <button type="button" class="link-btn" id="openLoginFromRegister">Se connecter</button></p>
     </div>`);
@@ -78,19 +155,11 @@ function registerModal(initialRole='candidate'){
     $('#openLoginFromRegister')?.addEventListener('click',loginModal);
     const form=$('#registerForm');
     if(form){
-      form.onsubmit=async e=>{
+      form.addEventListener('submit',async e=>{
         e.preventDefault();
-        const fd=new FormData(form),payload=Object.fromEntries(fd);
-        payload.role=role;
-        payload.terms=fd.has('terms');
-        payload.privacy=candidate?true:fd.has('privacy');
-        try{
-          await api('/api/register',{method:'POST',body:JSON.stringify(payload)});
-          closeModal();
-          await boot();
-          toast('Compte créé avec succès.');
-        }catch(err){toast(err.message||'Impossible de créer le compte.');}
-      };
+        e.stopPropagation();
+        await submitRegistrationForm(form,role);
+      });
     }
   };
   render();
