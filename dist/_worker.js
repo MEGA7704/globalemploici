@@ -653,6 +653,36 @@ async function api(req,env,url){
       ORDER BY a.id DESC`).bind(s.user.id).all();
     return json({applications:rows.results||[]});
   }
+  if(p==='/api/jobs'&&m==='GET'){
+    await ensureRecruiterProSchema(env);
+    const q=safeText(url.searchParams.get('q'),120).toLowerCase();
+    const city=safeText(url.searchParams.get('city'),120).toLowerCase();
+    const contract=safeText(url.searchParams.get('contract'),80).toLowerCase();
+    const category=safeText(url.searchParams.get('category'),120).toLowerCase();
+    const days=Math.max(0,Math.min(365,Number(url.searchParams.get('days')||0)));
+    const page=Math.max(1,Number(url.searchParams.get('page')||1));
+    const perPage=Math.max(4,Math.min(24,Number(url.searchParams.get('per_page')||12)));
+    const offset=(page-1)*perPage;
+    const likeQ=`%${q}%`,likeCity=`%${city}%`,likeContract=`%${contract}%`,likeCategory=`%${category}%`;
+    const where=`j.status='published'
+      AND u.role='recruiter' AND u.status='active'
+      AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=j.recruiter_id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now'))
+      AND (?='' OR lower(j.title) LIKE ? OR lower(COALESCE(j.profession,'')) LIKE ? OR lower(COALESCE(j.category,'')) LIKE ? OR lower(COALESCE(j.skills_required,'')) LIKE ?)
+      AND (?='' OR lower(COALESCE(j.location,'')) LIKE ?)
+      AND (?='' OR lower(COALESCE(j.employment_type,'')) LIKE ?)
+      AND (?='' OR lower(COALESCE(j.category,'')) LIKE ?)
+      AND (?=0 OR datetime(j.created_at)>=datetime('now','-' || ? || ' days'))`;
+    const binds=[q,likeQ,likeQ,likeQ,likeQ,city,likeCity,contract,likeContract,category,likeCategory,days,days];
+    const totalRow=await env.JOB_DB.prepare(`SELECT COUNT(*) n FROM jobs j JOIN users u ON u.id=j.recruiter_id WHERE ${where}`).bind(...binds).first();
+    const rows=await env.JOB_DB.prepare(`SELECT j.*,r.company_name,r.logo,r.company_city,
+      (SELECT s.plan FROM subscriptions s WHERE s.user_id=j.recruiter_id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now') ORDER BY datetime(s.expires_at) DESC LIMIT 1) plan
+      FROM jobs j JOIN users u ON u.id=j.recruiter_id
+      LEFT JOIN recruiter_profiles r ON r.user_id=j.recruiter_id
+      WHERE ${where}
+      ORDER BY j.id DESC LIMIT ? OFFSET ?`).bind(...binds,perPage,offset).all();
+    const total=Number(totalRow?.n||0),pages=Math.max(1,Math.ceil(total/perPage));
+    return json({jobs:rows.results||[],pagination:{page,per_page:perPage,total,pages,has_prev:page>1,has_next:page<pages}});
+  }
   if(/^\/api\/jobs\/\d+$/.test(p)&&m==='GET'){
     const id=Number(p.split('/').pop());
     await ensureRecruiterProSchema(env);
@@ -709,20 +739,26 @@ async function api(req,env,url){
     const experience=safeText(url.searchParams.get('experience'),120).toLowerCase();
     const availability=safeText(url.searchParams.get('availability'),120).toLowerCase();
     const education=safeText(url.searchParams.get('education'),120).toLowerCase();
+    const page=Math.max(1,Number(url.searchParams.get('page')||1));
+    const perPage=Math.max(4,Math.min(24,Number(url.searchParams.get('per_page')||12)));
+    const offset=(page-1)*perPage;
     const likeQ=`%${q}%`,likeCity=`%${city}%`,likeExp=`%${experience}%`,likeAvail=`%${availability}%`,likeEdu=`%${education}%`;
-    const rows=await env.JOB_DB.prepare(`SELECT u.id,p.first_name,p.last_name,p.profession,p.professional_title,p.specialty,p.city,p.country,p.experience_level,p.experience_years,p.skills,p.availability,p.photo,p.target_position,p.education_level,
-      (SELECT s.plan FROM subscriptions s WHERE s.user_id=u.id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now') ORDER BY datetime(s.expires_at) DESC LIMIT 1) plan
-      FROM users u JOIN candidate_profiles p ON p.user_id=u.id
-      WHERE u.role='candidate' AND u.status='active'
+    const where=`u.role='candidate' AND u.status='active'
       AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=u.id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now'))
       AND (?='' OR lower(COALESCE(p.profession,'')) LIKE ? OR lower(COALESCE(p.professional_title,'')) LIKE ? OR lower(COALESCE(p.specialty,'')) LIKE ? OR lower(COALESCE(p.skills,'')) LIKE ?)
       AND (?='' OR lower(COALESCE(p.city,'')) LIKE ?)
       AND (?='' OR lower(COALESCE(p.experience_level,'')) LIKE ? OR lower(COALESCE(p.experience_years,'')) LIKE ?)
       AND (?='' OR lower(COALESCE(p.availability,'')) LIKE ?)
-      AND (?='' OR lower(COALESCE(p.education_level,'')) LIKE ? OR EXISTS(SELECT 1 FROM candidate_education ce WHERE ce.user_id=u.id AND lower(COALESCE(ce.diploma,'')) LIKE ?))
-      ORDER BY u.id DESC LIMIT 200`)
-      .bind(q,likeQ,likeQ,likeQ,likeQ,city,likeCity,experience,likeExp,likeExp,availability,likeAvail,education,likeEdu,likeEdu).all();
-    return json({candidates:rows.results||[]});
+      AND (?='' OR lower(COALESCE(p.education_level,'')) LIKE ? OR EXISTS(SELECT 1 FROM candidate_education ce WHERE ce.user_id=u.id AND lower(COALESCE(ce.diploma,'')) LIKE ?))`;
+    const binds=[q,likeQ,likeQ,likeQ,likeQ,city,likeCity,experience,likeExp,likeExp,availability,likeAvail,education,likeEdu,likeEdu];
+    const totalRow=await env.JOB_DB.prepare(`SELECT COUNT(*) n FROM users u JOIN candidate_profiles p ON p.user_id=u.id WHERE ${where}`).bind(...binds).first();
+    const rows=await env.JOB_DB.prepare(`SELECT u.id,p.first_name,p.last_name,p.profession,p.professional_title,p.specialty,p.city,p.country,p.experience_level,p.experience_years,p.skills,p.availability,p.photo,p.target_position,p.education_level,
+      (SELECT s.plan FROM subscriptions s WHERE s.user_id=u.id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now') ORDER BY datetime(s.expires_at) DESC LIMIT 1) plan
+      FROM users u JOIN candidate_profiles p ON p.user_id=u.id
+      WHERE ${where}
+      ORDER BY u.id DESC LIMIT ? OFFSET ?`).bind(...binds,perPage,offset).all();
+    const total=Number(totalRow?.n||0),pages=Math.max(1,Math.ceil(total/perPage));
+    return json({candidates:rows.results||[],pagination:{page,per_page:perPage,total,pages,has_prev:page>1,has_next:page<pages}});
   }
   if(/^\/api\/candidates\/\d+$/.test(p)&&m==='GET'){
     await ensureCandidateSchema(env);
@@ -1143,6 +1179,35 @@ async function api(req,env,url){
     if(s.user.role==='super_admin') await env.JOB_DB.prepare('UPDATE support_messages SET status=?,updated_at=? WHERE id=?').bind(status,nowISO(),id).run();
     else await env.JOB_DB.prepare('UPDATE support_messages SET status=?,updated_at=? WHERE id=? AND (sender_user_id=? OR recipient_user_id=?)').bind(status,nowISO(),id,s.user.id,s.user.id).run();
     return json({ok:true});
+  }
+  if(p==='/api/admin/inbox'&&m==='GET'){
+    await requireAdmin(req,env);
+    await ensureRecruiterSchema(env); await ensureRecruitmentSchema(env); await ensureAdminModuleSchema(env);
+    const [registrations,activations,verifications,support,recruitments,applications]=await Promise.all([
+      env.JOB_DB.prepare(`SELECT u.id,u.email,u.phone,u.role,u.status,u.created_at,u.last_login_at,
+        s.plan,s.expires_at,s.status subscription_status
+        FROM users u LEFT JOIN subscriptions s ON s.id=(SELECT id FROM subscriptions WHERE user_id=u.id ORDER BY id DESC LIMIT 1)
+        WHERE u.role IN ('candidate','recruiter') ORDER BY u.id DESC LIMIT 2000`).all(),
+      env.JOB_DB.prepare(`SELECT sr.*,u.email,u.role FROM subscription_requests sr JOIN users u ON u.id=sr.user_id ORDER BY sr.id DESC LIMIT 2000`).all(),
+      env.JOB_DB.prepare(`SELECT r.user_id,r.first_name,r.last_name,r.company_name,r.verification_status,r.verification_note,r.updated_at,u.email,u.phone
+        FROM recruiter_profiles r JOIN users u ON u.id=r.user_id ORDER BY r.updated_at DESC LIMIT 2000`).all(),
+      env.JOB_DB.prepare(`SELECT sm.*,su.email sender_email,ru.email recipient_email FROM support_messages sm
+        LEFT JOIN users su ON su.id=sm.sender_user_id LEFT JOIN users ru ON ru.id=sm.recipient_user_id ORDER BY sm.id DESC LIMIT 2000`).all(),
+      env.JOB_DB.prepare(`SELECT rr.*,ru.email recruiter_email,cu.email candidate_email,rp.company_name
+        FROM recruitment_requests rr JOIN users ru ON ru.id=rr.recruiter_id JOIN users cu ON cu.id=rr.candidate_id
+        LEFT JOIN recruiter_profiles rp ON rp.user_id=rr.recruiter_id ORDER BY rr.id DESC LIMIT 2000`).all(),
+      env.JOB_DB.prepare(`SELECT a.id,a.status,a.created_at,j.id job_id,j.title,cu.email candidate_email,ru.email recruiter_email,rp.company_name
+        FROM applications a JOIN jobs j ON j.id=a.job_id JOIN users cu ON cu.id=a.candidate_id JOIN users ru ON ru.id=j.recruiter_id
+        LEFT JOIN recruiter_profiles rp ON rp.user_id=ru.id ORDER BY a.id DESC LIMIT 2000`).all()
+    ]);
+    return json({
+      registrations:registrations.results||[],
+      activation_requests:activations.results||[],
+      verification_requests:verifications.results||[],
+      support_requests:support.results||[],
+      recruitment_requests:recruitments.results||[],
+      applications:applications.results||[]
+    });
   }
   if(p==='/api/admin/users'&&m==='GET'){ await requireAdmin(req,env); const rows=await env.JOB_DB.prepare(`SELECT u.id,u.email,u.phone,u.role,u.status,u.created_at,s.plan,s.expires_at FROM users u LEFT JOIN subscriptions s ON s.id=(SELECT id FROM subscriptions WHERE user_id=u.id ORDER BY datetime(expires_at) DESC LIMIT 1) ORDER BY u.id DESC LIMIT 500`).all(); return json({users:rows.results}); }
   return json({error:'Route API introuvable.'},404);

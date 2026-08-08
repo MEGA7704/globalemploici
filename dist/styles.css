@@ -396,3 +396,22 @@ body{background:linear-gradient(180deg,#fff 0%,#fffafd 48%,#fff6fa 100%)}
 .notification-click:hover{transform:translateY(-2px);border-color:#E4ACC3;box-shadow:0 9px 24px rgba(114,20,63,.08)}
 @media(max-width:1100px){.candidate-job-search{grid-template-columns:repeat(2,minmax(0,1fr))}.candidate-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:720px){.candidate-job-search,.candidate-metrics,.candidate-app-filter{grid-template-columns:1fr}}
+
+/* V20 — synchronisation, annuaires publics et centre Admin */
+.page-skeleton,.directory-skeleton{display:grid;gap:14px;width:100%;grid-column:1/-1}
+.page-skeleton span,.directory-skeleton span{display:block;min-height:92px;border-radius:16px;background:linear-gradient(90deg,#FFF4F8 25%,#FFE5EF 50%,#FFF4F8 75%);background-size:220% 100%;animation:ge-skeleton 1.15s ease-in-out infinite}
+.page-skeleton.compact span{min-height:64px}
+@keyframes ge-skeleton{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.hero-directory-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.public-pagination{display:flex;justify-content:center;align-items:center;gap:7px;flex-wrap:wrap;margin:26px 0 8px}
+.public-pagination button{min-width:40px;height:40px;padding:0 12px;border-radius:10px;border:1px solid #E8BFD0;background:#fff;color:#7A3153;font-weight:800;cursor:pointer}
+.public-pagination button:hover:not([disabled]),.public-pagination button.active{background:linear-gradient(135deg,#A91450,#D8407E);color:#fff;border-color:transparent}
+.public-pagination button[disabled]{opacity:.38;cursor:not-allowed}
+#jobs.public-page-hidden,#candidates.public-page-hidden{display:none!important}
+#jobs,#candidates{min-height:70vh}
+.inbox-metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:18px}
+.inbox-metric{border:1px solid #EBC9D7;background:#fff;border-radius:15px;padding:15px 10px;display:flex;flex-direction:column;align-items:flex-start;gap:3px;color:#633047;box-shadow:0 6px 18px rgba(91,15,50,.04)}
+.inbox-metric strong{font-size:24px;color:#9C174B}.inbox-metric span{font-size:11px;font-weight:750}
+.inbox-metric.active{background:linear-gradient(145deg,#A91450,#D8407E);color:#fff;border-color:transparent}.inbox-metric.active strong{color:#fff}
+@media(max-width:1100px){.inbox-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:720px){.hero-directory-row{flex-direction:column}.hero-directory-row .btn{width:100%}.inbox-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}

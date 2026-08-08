@@ -252,3 +252,16 @@ La migration `migrations/0007_admin_modules.sql` ajoute les tables `app_settings
 - STANDARD/BUSINESS actif : les actions sont exécutées normalement.
 - Le Super Admin ne reçoit aucun message d'abonnement et ne possède pas de menu Abonnement.
 - Espace Demandeur enrichi : tableau de bord, recherche d'offres avancée, suivi des candidatures, aperçu du profil comme recruteur et notifications cliquables.
+
+
+## V20 — Synchronisation générale et annuaires publics paginés
+
+- Toutes les requêtes GET utilisent `cache: no-store` et chaque ouverture de page privée recharge la session et l'abonnement avant de récupérer les données du module.
+- Le texte « Chargement des données… » a été retiré. Des squelettes visuels sans texte sont utilisés pendant les requêtes.
+- Nouveau centre Super Admin **Demandes & inscriptions** : toutes les inscriptions présentes, demandes d'activation, vérifications, support, propositions « Je recrute » et candidatures sont centralisées sans filtre de statut.
+- Les annuaires publics **Offres disponibles** et **Talents disponibles** sont accessibles aux visiteurs connectés ou non et utilisent une pagination serveur de 12 éléments par page.
+- Le moteur de recherche de l'accueil ouvre la page dédiée aux offres avec les critères saisis.
+- Deux boutons de consultation permettent d'ouvrir directement toutes les offres ou tous les talents.
+- Les boutons **Je cherche un emploi** / **Je recrute** sont reliés directement aux inscriptions correspondantes pour les visiteurs non connectés.
+- Pour les comptes FREE connectés, les actions professionnelles **Je postule** / **Je recrute** redirigent vers Abonnement ; STANDARD/BUSINESS actif exécute l'action.
+- Le Super Admin ne reçoit aucun message d'abonnement.

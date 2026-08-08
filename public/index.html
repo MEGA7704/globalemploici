@@ -80,6 +80,10 @@
         <button class="btn primary big" data-open-register="candidate">Je cherche un emploi</button>
         <button class="btn soft-blue big" data-open-register="recruiter">Je recrute</button>
       </div>
+      <div class="hero-directory-row">
+        <button class="btn outline-blue" id="browseJobsHome">Voir toutes les offres disponibles</button>
+        <button class="btn outline-blue" id="browseCandidatesHome">Voir tous les talents disponibles</button>
+      </div>
     </div>
 
     <div class="hero-visual" aria-label="Professionnel souriant dans un environnement de bureau">
@@ -108,7 +112,7 @@
     <button id="jobsSearchBtn" class="btn primary">⌕ Rechercher</button>
   </div>
   <div id="publicJobsCount" class="results-count"></div>
-  <div id="publicJobsGrid" class="offer-grid dynamic-grid"><div class="panel">Chargement des offres…</div></div>
+  <div id="publicJobsGrid" class="offer-grid dynamic-grid"></div><div id="publicJobsPagination" class="public-pagination"></div>
 </section>
 
   <section id="candidates" class="section-shell profiles-section">
@@ -121,7 +125,7 @@
     <button id="candidatesSearchBtn" class="btn primary">⌕ Rechercher</button>
   </div>
   <div id="publicCandidatesCount" class="results-count"></div>
-  <div id="publicCandidatesGrid" class="candidate-market-grid"><div class="panel">Chargement des profils…</div></div>
+  <div id="publicCandidatesGrid" class="candidate-market-grid"></div><div id="publicCandidatesPagination" class="public-pagination"></div>
 </section>
 
   <section id="companies" class="section-shell business-banner">
