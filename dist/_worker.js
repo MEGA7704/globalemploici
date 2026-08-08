@@ -1296,8 +1296,9 @@ export default {
       }
 
       if(url.pathname.startsWith('/api/')){
-        // V26 : schéma et liaisons obligatoires, sans masquer les erreurs.
-        await ensureRuntimeSchema(env);
+        // V30 : aucune migration lourde dans le chemin critique d'inscription/connexion/session.
+        // Le schéma est déployé explicitement par migration. Les API doivent répondre rapidement.
+        if(!['/api/register','/api/login','/api/session','/api/logout'].includes(url.pathname)) await ensureRuntimeSchema(env);
         const response=await api(request,env,url);
         const h=new Headers(response.headers);
         h.set('cache-control','no-store');

@@ -8,16 +8,29 @@ const api=async(path,options={})=>{
     const sep=requestPath.includes('?')?'&':'?';
     requestPath+=`${sep}_fresh=${Date.now()}`;
   }
-  const r=await fetch(requestPath,{cache:'no-store',headers:{'content-type':'application/json','cache-control':'no-cache',...(options.headers||{})},...options});
-  const d=await r.json().catch(()=>({}));
-  if(!r.ok){
-    const e=new Error(d.error||`Erreur HTTP ${r.status}`);
-    e.code=d.code||`HTTP_${r.status}`;
-    e.reference=d.reference||'';
-    e.detail=d.detail||'';
-    throw e;
-  }
-  return d;
+  const controller=new AbortController();
+  const timeoutMs=Number(options.timeoutMs||20000);
+  const timer=setTimeout(()=>controller.abort('timeout'),timeoutMs);
+  try{
+    const {timeoutMs:_ignored,...fetchOptions}=options;
+    const r=await fetch(requestPath,{cache:'no-store',headers:{'content-type':'application/json','cache-control':'no-cache',...(fetchOptions.headers||{})},...fetchOptions,signal:fetchOptions.signal||controller.signal});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){
+      const e=new Error(d.error||`Erreur HTTP ${r.status}`);
+      e.code=d.code||`HTTP_${r.status}`;
+      e.reference=d.reference||'';
+      e.detail=d.detail||'';
+      throw e;
+    }
+    return d;
+  }catch(err){
+    if(err?.name==='AbortError' || controller.signal.aborted){
+      const e=new Error('Le serveur met trop de temps à répondre. Réessayez.');
+      e.code='REQUEST_TIMEOUT';
+      throw e;
+    }
+    throw err;
+  }finally{clearTimeout(timer);}
 };
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.remove('hidden');setTimeout(()=>t.classList.add('hidden'),3200)}
 function modal(html){$('#modalBody').innerHTML=html;$('#modal').classList.remove('hidden')}
@@ -89,15 +102,18 @@ async function submitRegistrationForm(form,role){
   payload.terms=fd.has('terms');
   payload.privacy=isCandidate?true:fd.has('privacy');
   try{
-    const result=await api('/api/register',{method:'POST',body:JSON.stringify(payload)});
-    registrationFeedback('Compte créé avec succès. Ouverture de votre espace…','success');
-    let bootOk=true;
-    try{await boot();}catch(bootErr){
-      bootOk=false;
-      console.error('GLOBAL_EMPLOI_POST_REGISTER_BOOT_ERROR',bootErr);
-    }
+    const result=await api('/api/register',{method:'POST',body:JSON.stringify(payload),timeoutMs:20000});
+    // L'inscription est terminée dès que /api/register répond 201.
+    // Ne jamais bloquer la fermeture du formulaire sur boot()/session ou sur le chargement d'une autre page.
     closeModal();
-    toast(bootOk?'Compte créé avec succès.':'Compte créé. Reconnectez-vous pour ouvrir votre espace.');
+    toast('Compte créé avec succès. Ouverture de votre espace…');
+    Promise.race([
+      boot(),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('post-register boot timeout')),8000))
+    ]).catch(bootErr=>{
+      console.error('GLOBAL_EMPLOI_POST_REGISTER_BOOT_ERROR',bootErr);
+      toast('Compte créé avec succès. Si votre espace ne s’ouvre pas, utilisez « Se connecter ».');
+    });
     return result;
   }catch(err){
     const suffix=[err.code?`Code ${err.code}`:'',err.reference?`Réf. ${err.reference}`:''].filter(Boolean).join(' • ');
