@@ -5,6 +5,23 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="description" content="GLOBAL EMPLOI - plateforme ivoirienne de recrutement, d'emploi, de métiers et de mise en relation professionnelle." />
   <meta name="theme-color" content="#1557D6" />
+  <meta name="referrer" content="no-referrer" />
+  <script>
+    // Défense supplémentaire : ne jamais conserver des identifiants dans l’URL.
+    (() => {
+      try {
+        const u = new URL(window.location.href);
+        let changed = false;
+        for (const key of ['email','password','recovery_token','token']) {
+          if (u.searchParams.has(key)) { u.searchParams.delete(key); changed = true; }
+        }
+        if (changed) {
+          const qs = u.searchParams.toString();
+          history.replaceState(null, '', u.pathname + (qs ? '?' + qs : '') + u.hash);
+        }
+      } catch (_) {}
+    })();
+  </script>
   <title>GLOBAL EMPLOI — L'opportunité à portée de main</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -148,7 +165,7 @@
   <section id="plans" class="section-shell plans-public">
     <div class="section-head centered"><div><span class="section-kicker">ABONNEMENTS CANDIDATS</span><h2>Choisissez la formule qui vous convient</h2><p>Commencez gratuitement, puis augmentez la durée et la visibilité de votre profil.</p></div></div>
     <div class="plans">
-      <article class="plan public-plan"><div class="plan-icon">○</div><h3>FREE</h3><div class="price">0 <small>FCFA</small></div><p class="plan-duration">7 jours gratuits</p><ul><li>✓ Consultation de toutes les pages</li><li>✓ Consultation des offres et profils visibles</li><li>✓ Création de vos publications, masquées en FREE</li><li>✕ Je postule / Je recrute indisponibles</li></ul><button class="btn outline-blue full-btn" data-open-register="candidate">Commencer gratuitement</button></article>
+      <article class="plan public-plan"><div class="plan-icon">○</div><h3>FREE</h3><div class="price">0 <small>FCFA</small></div><p class="plan-duration">Consultation permanente</p><ul><li>✓ Consultation de toutes les pages</li><li>✓ Consultation des offres et profils visibles</li><li>✓ Création de vos publications, masquées en FREE</li><li>✕ Je postule / Je recrute indisponibles</li></ul><button class="btn outline-blue full-btn" data-open-register="candidate">Commencer gratuitement</button></article>
       <article class="plan public-plan featured"><span class="recommended">RECOMMANDÉ</span><div class="plan-icon">★</div><h3>STANDARD</h3><div class="price">1 000 <small>FCFA</small></div><p class="plan-duration">Validité 30 jours</p><ul><li>✓ Profil actif</li><li>✓ Candidatures</li><li>✓ Meilleure visibilité</li><li>✓ Messagerie</li></ul><button class="btn primary full-btn" data-open-register="candidate">Choisir Standard</button></article>
       <article class="plan public-plan business"><div class="plan-icon">◆</div><h3>BUSINESS</h3><div class="price">10 000 <small>FCFA</small></div><p class="plan-duration">Validité 365 jours</p><ul><li>✓ Profil prioritaire</li><li>✓ Visibilité maximale</li><li>✓ Accès complet aux opportunités</li><li>✓ Messagerie</li></ul><button class="btn dark-btn full-btn" data-open-register="candidate">Choisir Business</button></article>
     </div>

@@ -93,10 +93,10 @@ async function superAdminRecoveryModal(){
 
 function loginModal(){
   modal(`<h2>Connexion</h2><p class="muted">Accédez à votre espace GLOBAL EMPLOI.</p>
-    <form id="loginForm" class="form-grid">
-      <div class="field full"><label>E-mail</label><input name="email" type="email" required></div>
-      <div class="field full"><label>Mot de passe</label><div class="password-wrap"><input id="loginPassword" name="password" type="password" required><button class="password-toggle" type="button" data-toggle-password="loginPassword" aria-label="Afficher le mot de passe">◉</button></div></div>
-      <div class="full"><button class="btn primary">Se connecter</button></div>
+    <form id="loginForm" class="form-grid" method="post" action="/api/login" autocomplete="on">
+      <div class="field full"><label>E-mail</label><input name="email" type="email" autocomplete="username" required></div>
+      <div class="field full"><label>Mot de passe</label><div class="password-wrap"><input id="loginPassword" name="password" type="password" autocomplete="current-password" required><button class="password-toggle" type="button" data-toggle-password="loginPassword" aria-label="Afficher le mot de passe">◉</button></div></div>
+      <div class="full"><button class="btn primary" type="submit">Se connecter</button></div>
     </form>`);
   bindPasswordToggles();
   $('#loginForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);try{await api('/api/login',{method:'POST',body:JSON.stringify(Object.fromEntries(f))});closeModal();await boot();toast('Connexion réussie');}catch(err){toast(err.message)}}
@@ -250,8 +250,19 @@ async function loadPublicStats(){
   }catch{}
 }
 async function boot(){
-  try{state.session=await api('/api/session');showConnectedHome();scheduleFreePopup();}
-  catch{state.session=null;showGuest();}
+  try{
+    state.session=await api('/api/session');
+    showConnectedHome();
+    scheduleFreePopup();
+  }catch(err){
+    state.session=null;
+    showGuest();
+    // Une absence de session est normale. Une erreur serveur ne doit plus être masquée comme une simple déconnexion.
+    if(err?.code && err.code!=='HTTP_401'){
+      const ref=err.reference?` • Réf. ${err.reference}`:'';
+      toast(`Connexion aux données impossible : ${err.message}${ref}`);
+    }
+  }
 }
 function showGuest(){
   state.view='home';$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');
@@ -268,6 +279,7 @@ function showConnectedHome(){
 function updateSubChip(){
   if(state.session?.user?.role==='super_admin'){if($('#subscriptionChip'))$('#subscriptionChip').textContent='SUPER ADMIN • permanent';return}
   const s=state.session.subscription;if(!s){if($('#subscriptionChip'))$('#subscriptionChip').textContent='Aucun abonnement';return}
+  if(s.plan==='free'){if($('#subscriptionChip'))$('#subscriptionChip').textContent='FREE • consultation';return}
   const d=new Date(s.expires_at).toLocaleDateString('fr-FR');if($('#subscriptionChip'))$('#subscriptionChip').textContent=`${s.plan.toUpperCase()} • jusqu'au ${d}`;
 }
 $('#backHomeBtn')?.addEventListener('click',()=>showPublicHome('home'));
@@ -278,7 +290,11 @@ async function render(view){
     state.session=await api('/api/session');
     buildAccountMenu();buildConnectedTopNav();updateSubChip();
   }catch(sessionError){
-    state.session=null;showGuest();loginModal();return;
+    if(sessionError?.code==='HTTP_401'){
+      state.session=null;showGuest();loginModal();return;
+    }
+    // Ne pas transformer une panne D1/API en fausse déconnexion : la page affiche l'erreur et permet Réessayer.
+    throw sessionError;
   }
   const names={
     dashboard:'Tableau de bord',profile:state.session?.user?.role==='recruiter'?'Profil entreprise':'Mon profil',
@@ -363,7 +379,7 @@ async function renderDashboard(){
   }
   if(u.role==='candidate'){
     let c={percent:0,recommendations:[]};try{c=await api('/api/profile/completeness')}catch{}
-    const paid=hasActivePaidPlan(), expiry=s?.expires_at?new Date(s.expires_at).toLocaleDateString('fr-FR'):'—';
+    const paid=hasActivePaidPlan(), expiry=s?.plan==='free'?'sans expiration':s?.expires_at?new Date(s.expires_at).toLocaleDateString('fr-FR'):'—';
     const statusCounts={submitted:0,reviewing:0,shortlisted:0,interview:0,accepted:0,rejected:0};
     let apps={applications:[]};try{apps=await api('/api/candidate/applications');apps.applications.forEach(a=>statusCounts[a.status]=(statusCounts[a.status]||0)+1)}catch{}
     $('#viewContent').innerHTML=`
@@ -820,7 +836,7 @@ function renderSubscription(){
   $('#viewContent').innerHTML=`
     <div class="module-hero"><div><span class="section-kicker">ABONNEMENT</span><h2>Choisissez votre niveau d’accès</h2><p>Votre formule détermine la visibilité de vos publications et l’accès aux actions de recrutement.</p></div><div class="dashboard-plan light-plan"><small>FORMULE ACTUELLE</small><strong>${current}</strong><span>${active?'Active':'Expirée'} ${s?.expires_at?'• '+new Date(s.expires_at).toLocaleDateString('fr-FR'):''}</span></div></div>
     <div class="plans professional-plans">
-      <div class="plan"><h3>FREE</h3><div class="price">0 F</div><p>7 jours</p><ul><li>✓ Consultation des contenus</li><li>✓ Préparation du profil/publications</li><li>✕ ${state.session.user.role==='candidate'?'Je postule':'Je recrute'}</li><li>✕ ${state.session.user.role==='candidate'?'Profil visible aux recruteurs':'Offres visibles au public'}</li></ul><small class="free-warning">Sans activation payante à la fin du délai FREE, le compte est désactivé et masqué du public ; ses données restent conservées pour l’administration.</small></div>
+      <div class="plan"><h3>FREE</h3><div class="price">0 F</div><p>Consultation permanente</p><ul><li>✓ Consultation des contenus</li><li>✓ Préparation du profil/publications</li><li>✕ ${state.session.user.role==='candidate'?'Je postule':'Je recrute'}</li><li>✕ ${state.session.user.role==='candidate'?'Profil visible aux recruteurs':'Offres visibles au public'}</li></ul><small class="free-warning">Le compte FREE reste accessible pour consulter la plateforme. STANDARD ou BUSINESS est requis pour les actions professionnelles et la visibilité publique.</small></div>
       <div class="plan featured"><h3>STANDARD</h3><div class="price">1 000 F</div><p>30 jours</p><ul><li>✓ Publications visibles</li><li>✓ Je postule / Je recrute</li><li>✓ Messagerie et suivi</li></ul><a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=1000" target="_blank" rel="noopener">Payer 1 000 F avec Wave</a></div>
       <div class="plan"><h3>BUSINESS</h3><div class="price">10 000 F</div><p>365 jours</p><ul><li>✓ Accès complet</li><li>✓ Visibilité longue durée</li><li>✓ Toutes les fonctions professionnelles</li></ul><a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=10000" target="_blank" rel="noopener">Payer 10 000 F avec Wave</a></div>
     </div>
@@ -836,7 +852,7 @@ async function renderPayments(){
   $('#viewContent').innerHTML=`
     <div class="module-hero"><div><span class="section-kicker">PAIEMENTS</span><h2>Historique des abonnements</h2><p>Suivez les formules activées et toutes vos demandes de validation de paiement.</p></div></div>
     <div class="dashboard-columns">
-      <div class="panel"><h3>Formules enregistrées</h3><div class="table-wrap"><table class="table"><thead><tr><th>Formule</th><th>Début</th><th>Expiration</th><th>Statut</th></tr></thead><tbody>${d.subscriptions.map(x=>`<tr><td><b>${esc(x.plan.toUpperCase())}</b></td><td>${new Date(x.started_at).toLocaleDateString('fr-FR')}</td><td>${new Date(x.expires_at).toLocaleDateString('fr-FR')}</td><td><span class="pill">${esc(x.status)}</span></td></tr>`).join('')||'<tr><td colspan="4">Aucun abonnement.</td></tr>'}</tbody></table></div></div>
+      <div class="panel"><h3>Formules enregistrées</h3><div class="table-wrap"><table class="table"><thead><tr><th>Formule</th><th>Début</th><th>Expiration</th><th>Statut</th></tr></thead><tbody>${d.subscriptions.map(x=>`<tr><td><b>${esc(x.plan.toUpperCase())}</b></td><td>${new Date(x.started_at).toLocaleDateString('fr-FR')}</td><td>${x.plan==='free'?'Sans expiration':new Date(x.expires_at).toLocaleDateString('fr-FR')}</td><td><span class="pill">${esc(x.status)}</span></td></tr>`).join('')||'<tr><td colspan="4">Aucun abonnement.</td></tr>'}</tbody></table></div></div>
       <div class="panel"><h3>Demandes d’activation</h3><div class="payment-history">${d.requests.map(x=>`<article class="payment-record"><div class="card-topline"><b>${esc(x.plan.toUpperCase())} — ${formatCount(x.amount)} F</b><span class="pill">${esc(x.status)}</span></div><p>Téléphone : ${esc(x.payer_phone)}<br>ID transaction : ${esc(x.transaction_id)}</p><small>Demandé le ${new Date(x.created_at).toLocaleString('fr-FR')}${x.processed_at?' • traité le '+new Date(x.processed_at).toLocaleString('fr-FR'):''}</small>${x.admin_note?`<p class="muted">${esc(x.admin_note)}</p>`:''}</article>`).join('')||'<p class="muted">Aucune demande envoyée.</p>'}</div></div>
     </div>`;
 }
@@ -854,7 +870,7 @@ async function renderSettings(){
           <div class="field full"><label>Lien de paiement Wave</label><input name="wave_payment_url" value="${esc(cfg.wave_payment_url||'https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=')}"></div>
           <div class="field"><label>Prix STANDARD (FCFA)</label><input name="standard_price" type="number" value="${esc(cfg.standard_price||'1000')}"></div>
           <div class="field"><label>Prix BUSINESS (FCFA)</label><input name="business_price" type="number" value="${esc(cfg.business_price||'10000')}"></div>
-          <div class="field"><label>Durée FREE (jours)</label><input name="free_days" type="number" value="${esc(cfg.free_days||'7')}"></div>
+          <div class="field"><label>Formule FREE</label><input value="Consultation permanente" readonly></div>
           <div class="field"><label>Durée STANDARD (jours)</label><input name="standard_days" type="number" value="${esc(cfg.standard_days||'30')}"></div>
           <div class="field"><label>Durée BUSINESS (jours)</label><input name="business_days" type="number" value="${esc(cfg.business_days||'365')}"></div>
           <div class="field"><label>Pays par défaut</label><input name="default_country" value="${esc(cfg.default_country||"Côte d'Ivoire")}"></div>
@@ -930,7 +946,7 @@ async function renderAdminMembers(){
   const raw=await api('/api/admin/users');
   const d={users:asList(raw.users)};
   $('#viewContent').innerHTML=`
-    <div class="module-hero"><div><span class="section-kicker">GESTION CENTRALE</span><h2>Membres inscrits</h2><p>Consultez tous les comptes, y compris les comptes FREE expirés automatiquement désactivés mais conservés dans D1.</p></div><div class="report-actions"><div class="dashboard-plan light-plan"><small>TOTAL GÉRÉ</small><strong>${formatCount(d.users.filter(x=>x.role!=='super_admin').length)}</strong><span>membres inscrits</span></div><button id="refreshAdminMembers" class="btn outline-blue">Actualiser</button></div></div>
+    <div class="module-hero"><div><span class="section-kicker">GESTION CENTRALE</span><h2>Membres inscrits</h2><p>Consultez tous les comptes, leurs statuts et leurs abonnements. Les comptes FREE restent accessibles pour la consultation.</p></div><div class="report-actions"><div class="dashboard-plan light-plan"><small>TOTAL GÉRÉ</small><strong>${formatCount(d.users.filter(x=>x.role!=='super_admin').length)}</strong><span>membres inscrits</span></div><button id="refreshAdminMembers" class="btn outline-blue">Actualiser</button></div></div>
     <div class="market-search admin-filter">
       <div class="field"><label>Recherche</label><input id="adminMemberSearch" placeholder="E-mail, téléphone, rôle…"></div>
       <div class="field"><label>Rôle</label><select id="adminMemberRole"><option value="">Tous</option><option value="candidate">Demandeurs</option><option value="recruiter">Recruteurs</option></select></div>
@@ -941,7 +957,7 @@ async function renderAdminMembers(){
   const draw=()=>{
     const q=$('#adminMemberSearch').value.toLowerCase().trim(),role=$('#adminMemberRole').value,status=$('#adminMemberStatus').value;
     const rows=d.users.filter(x=>x.role!=='super_admin'&&(!role||x.role===role)&&(!status||x.status===status)&&(!q||`${x.email} ${x.phone||''} ${x.role}`.toLowerCase().includes(q)));
-    $('#adminMembersTable').innerHTML=`<div class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Membre</th><th>Rôle</th><th>Statut</th><th>Formule</th><th>Expiration</th><th>Actions</th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.email)}</b><br><small>${esc(x.phone||'')}</small></td><td>${x.role==='candidate'?'Demandeur':'Recruteur'}</td><td><span class="pill">${esc(x.status)}</span></td><td>${esc((x.plan||'—').toUpperCase())}</td><td>${x.expires_at?new Date(x.expires_at).toLocaleDateString('fr-FR'):'—'}</td><td><div class="admin-row-actions"><button class="btn outline-blue admin-member-detail" data-id="${x.id}">Voir</button><select class="admin-user-status" data-id="${x.id}"><option value="active" ${x.status==='active'?'selected':''}>Actif</option><option value="suspended" ${x.status==='suspended'?'selected':''}>Suspendu</option><option value="disabled" ${x.status==='disabled'?'selected':''}>Désactivé</option></select><button class="btn danger admin-delete-user" data-id="${x.id}" data-email="${esc(x.email)}">Supprimer</button></div></td></tr>`).join('')||'<tr><td colspan="6">Aucun résultat.</td></tr>'}</tbody></table></div></div>`;
+    $('#adminMembersTable').innerHTML=`<div class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Membre</th><th>Rôle</th><th>Statut</th><th>Formule</th><th>Expiration</th><th>Actions</th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.email)}</b><br><small>${esc(x.phone||'')}</small></td><td>${x.role==='candidate'?'Demandeur':'Recruteur'}</td><td><span class="pill">${esc(x.status)}</span></td><td>${esc((x.plan||'—').toUpperCase())}</td><td>${x.plan==='free'?'Sans expiration':x.expires_at?new Date(x.expires_at).toLocaleDateString('fr-FR'):'—'}</td><td><div class="admin-row-actions"><button class="btn outline-blue admin-member-detail" data-id="${x.id}">Voir</button><select class="admin-user-status" data-id="${x.id}"><option value="active" ${x.status==='active'?'selected':''}>Actif</option><option value="suspended" ${x.status==='suspended'?'selected':''}>Suspendu</option><option value="disabled" ${x.status==='disabled'?'selected':''}>Désactivé</option></select><button class="btn danger admin-delete-user" data-id="${x.id}" data-email="${esc(x.email)}">Supprimer</button></div></td></tr>`).join('')||'<tr><td colspan="6">Aucun résultat.</td></tr>'}</tbody></table></div></div>`;
     $$('.admin-user-status').forEach(s=>s.onchange=async()=>{try{await api(`/api/admin/users/${s.dataset.id}/status`,{method:'POST',body:JSON.stringify({status:s.value})});toast('Statut du membre mis à jour.')}catch(err){toast(err.message)}});
     $$('.admin-delete-user').forEach(b=>b.onclick=()=>adminDeleteUser(b.dataset.id,b.dataset.email));
     $$('.admin-member-detail').forEach(b=>b.onclick=()=>adminMemberDetail(Number(b.dataset.id)));
@@ -1134,18 +1150,7 @@ async function adminAction(id,action){try{await api(`/api/admin/subscription-req
 
 function scheduleFreePopup(){
   clearInterval(state.freeTimer);
-  const s=state.session.subscription;
-  if(!s||s.plan!=='free'||s.effective_status!=='active')return;
-  state.freeTimer=setInterval(()=>{
-    if(!$('#modal').classList.contains('hidden'))return;
-    modal(`<h2>Votre accès FREE est limité à 7 jours</h2>
-      <p class="muted">Vous pouvez consulter toutes les pages, les offres visibles et les profils publiés, mais vous ne pouvez pas encore utiliser « Je postule » ou « Je recrute ».</p>
-      <div class="free-expiry-alert"><b>Important :</b> si votre abonnement STANDARD ou BUSINESS n’est pas activé avant la fin de vos 7 jours FREE, votre compte sera désactivé et ses publications seront masquées. Après l’expiration d’un abonnement payant, votre compte repasse également en FREE pendant 7 jours. Les données restent conservées dans l’administration et un abonnement payant peut réactiver le compte.</div>
-      <div class="plans" style="grid-template-columns:1fr 1fr">
-        <div class="plan featured"><h3>STANDARD</h3><div class="price">1 000 F</div><p>30 jours</p><a class="btn primary" target="_blank" rel="noopener" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=1000">Choisir STANDARD</a></div>
-        <div class="plan"><h3>BUSINESS</h3><div class="price">10 000 F</div><p>365 jours</p><a class="btn primary" target="_blank" rel="noopener" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=10000">Choisir BUSINESS</a></div>
-      </div><br><button class="btn ghost" onclick="document.querySelector('#modal').classList.add('hidden')">Plus tard</button>`);
-  },300000)
+  state.freeTimer=null;
 }
 
 const mobileMenuBtn=$('#mobileMenuBtn');

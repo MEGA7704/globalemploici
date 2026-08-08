@@ -1,11 +1,12 @@
 {
   "name": "global-emploi",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "private": true,
   "scripts": {
     "dev": "wrangler pages dev dist --compatibility-date=2026-08-07",
     "build": "node scripts/build.mjs",
-    "deploy": "npm run build && wrangler pages deploy dist"
+    "deploy": "npm run build && wrangler pages deploy dist",
+    "test:smoke": "python3 scripts/verify_route_contracts.py && python3 scripts/smoke_pages.py"
   },
   "devDependencies": {
     "wrangler": "^4.28.1"

@@ -1,3 +1,14 @@
+
+## V24 — CORRECTION RÉELLE DES PAGES ADMIN / RECRUTEUR / DEMANDEUR
+
+- Le Worker exécute désormais `ensureRuntimeSchema()` **avant** `checkDatabase()`, la lecture de session et les routes métier.
+- Une base D1 ancienne ou partiellement migrée est réparée automatiquement : tables principales, colonnes candidat/recruteur, modules Admin, recrutement et colonnes professionnelles des offres.
+- Les comptes FREE ne sont plus automatiquement désactivés après 7 jours : ils restent connectables et peuvent consulter les contenus.
+- Les désactivations manuelles effectuées par le Super Admin restent respectées.
+- Les erreurs de session serveur ne sont plus masquées comme une simple déconnexion dans le frontend.
+- Les pages Admin, Demandeur et Recruteur ont été contrôlées avec des données SQLite représentatives via `scripts/smoke_pages.py`.
+- Les contrats frontend/API sont vérifiés par `scripts/verify_route_contracts.py`.
+
 # GLOBAL EMPLOI
 
 Application Cloudflare Pages/Workers + D1 + KV pour la mise en relation entre demandeurs d'emploi et recruteurs.
@@ -143,20 +154,20 @@ Menu recruteur : Tableau de bord, Profil entreprise, Publier une offre, Mes offr
 
 ## V10 — Règles d'abonnement
 
-- La formule **FREE dure 7 jours** pour les Demandeurs d'emploi et les Recruteurs.
+- La formule **FREE reste accessible sans expiration pour la consultation**. Les actions professionnelles restent réservées à STANDARD/BUSINESS.
 - Un compte FREE peut consulter les pages publiques, les offres visibles et les profils visibles.
 - Un compte FREE ne peut pas utiliser **Je postule** ni **Je recrute**.
 - Les offres créées par un recruteur FREE restent enregistrées mais **masquées du public**.
 - Les profils/publications FREE restent également masqués.
 - Dès qu'un abonnement **STANDARD** ou **BUSINESS** devient actif, les publications concernées deviennent automatiquement visibles.
 - À l'expiration d'un abonnement STANDARD/BUSINESS, les publications sont automatiquement masquées jusqu'au renouvellement.
-- Un compte qui reste uniquement FREE après l'expiration de ses 7 jours est automatiquement désactivé et masqué du public. Ses données restent conservées dans D1 afin que le Super Admin garde l'historique complet.
-- Les anciens comptes FREE recruteur initialement configurés à 24 heures sont normalisés à 7 jours depuis leur date de début.
+- Un compte FREE reste actif et peut consulter la plateforme. Ses propres publications restent masquées du public tant qu’un abonnement STANDARD/BUSINESS n’est pas actif.
+- Les anciens comptes FREE expirés sont automatiquement normalisés en accès FREE de consultation, sans suppression de données.
 - La migration `migrations/0005_free_7_days.sql` est incluse.
 
 
 ## V11 — Expiration des abonnements payants
-À l'expiration d'un abonnement STANDARD ou BUSINESS, le compte repasse automatiquement en FREE pour 7 jours à compter de la date d'expiration du payant. Pendant ce délai, ses publications sont masquées et Je postule / Je recrute sont désactivés. Un renouvellement payant réactive automatiquement la visibilité. Sans nouvel abonnement payant actif à la fin des 7 jours, le compte est désactivé et masqué du public, mais ses données restent visibles dans l'administration. Une activation STANDARD/BUSINESS le réactive automatiquement.
+À l'expiration d'un abonnement STANDARD ou BUSINESS, le compte repasse automatiquement en mode FREE de consultation. Ses publications sont masquées et Je postule / Je recrute restent désactivés jusqu’à une nouvelle activation payante. Le compte n’est plus désactivé automatiquement et ses données restent disponibles dans les espaces concernés et dans l’administration.
 
 
 ## V12 — Initialiser / Récupérer le Super Admin
@@ -283,10 +294,10 @@ La migration `migrations/0007_admin_modules.sql` ajoute les tables `app_settings
 
 ## V22 — Fiabilisation des données Super Admin
 
-- Les comptes FREE expirés ne sont plus supprimés physiquement par la maintenance automatique : ils sont désactivés et masqués du public afin de préserver l'historique Admin.
+- Les comptes FREE ne sont ni supprimés ni désactivés automatiquement : ils restent accessibles pour la consultation et sont masqués uniquement pour les fonctions/publications nécessitant un plan payant.
 - Les écrans **Demandes & inscriptions**, **Membres**, **Activations**, **Vérifications**, **Offres**, **Candidatures**, **Journal**, **Messages** et **Paramètres** lisent directement les données D1 et disposent d'une actualisation explicite.
 - Les requêtes Admin utilisent des jointures tolérantes afin qu'une relation ancienne ou incomplète ne masque pas toute une ligne.
-- L'activation d'un abonnement STANDARD/BUSINESS réactive automatiquement un compte précédemment désactivé par expiration FREE.
+- L’activation d’un abonnement STANDARD/BUSINESS rétablit immédiatement les actions professionnelles et la visibilité publique prévues par la formule.
 - La page Messages Admin regroupe les messages de support et les messages enregistrés dans la messagerie de la plateforme.
 - `migrations/0009_admin_data_integrity.sql` ajoute les index Admin et initialise les paramètres de plateforme manquants.
 
@@ -297,3 +308,11 @@ npx wrangler d1 execute job_d1 --remote --file=migrations/0009_admin_data_integr
 ```
 
 Le Worker V22 garde néanmoins une logique d'auto-réparation des modules Admin pour les anciennes bases.
+
+
+## Correctif sécurité V23 — identifiants hors URL
+- Le formulaire de connexion utilise explicitement `method="post"` vers `/api/login`.
+- `/api/login` accepte JSON (application) ou formulaire POST natif, jamais les identifiants via GET.
+- Toute URL publique contenant `email`, `password`, `recovery_token` ou `token` est immédiatement redirigée vers une URL nettoyée.
+- La page applique `Referrer-Policy: no-referrer`, `Cache-Control: no-store` pour HTML/API et des en-têtes de durcissement supplémentaires.
+- Après exposition accidentelle d'un mot de passe, changer le Secret Cloudflare correspondant puis utiliser la procédure de récupération Super Admin afin de mettre à jour le hash D1 et invalider les anciennes sessions.

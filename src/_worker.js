@@ -45,7 +45,7 @@ async function checkDatabase(env){
     }
     return true;
   }catch(err){
-    if(err && err.code==='D1_NOT_INITIALIZED') throw err;
+    if(err && (err.code==='D1_NOT_INITIALIZED'||err.code==='D1_SCHEMA_INCOMPLETE')) throw err;
     const e=new Error(`D1 unavailable: ${err?.message||err}`);
     e.code='D1_UNAVAILABLE';
     e.publicMessage='La base D1 est indisponible ou mal liée au projet.';
@@ -67,6 +67,106 @@ async function checkKV(env){
     e.publicMessage='Le namespace KV est indisponible ou mal lié au projet.';
     throw e;
   }
+}
+
+
+let runtimeSchemaReadyPromise = null;
+
+async function ensureCoreSchema(env){
+  await env.JOB_DB.exec(`
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL UNIQUE,
+      phone TEXT,
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      role TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      session_version INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_login_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS candidate_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      first_name TEXT,last_name TEXT,profession TEXT,specialty TEXT,city TEXT,location TEXT,education TEXT,experience_years INTEGER DEFAULT 0,
+      skills TEXT,description TEXT,availability TEXT,work_types TEXT,photo TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS recruiter_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      recruiter_type TEXT,company_name TEXT,activity TEXT,description TEXT,city TEXT,address TEXT,logo TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,plan TEXT NOT NULL,
+      started_at TEXT NOT NULL,expires_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id,expires_at DESC);
+    CREATE TABLE IF NOT EXISTS subscription_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,plan TEXT NOT NULL,amount INTEGER NOT NULL,
+      payer_phone TEXT NOT NULL,transaction_id TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',admin_id INTEGER REFERENCES users(id),admin_note TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,processed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,recruiter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,title TEXT NOT NULL,profession TEXT,category TEXT,
+      description TEXT NOT NULL,employment_type TEXT,location TEXT,salary TEXT,vacancies INTEGER DEFAULT 1,status TEXT NOT NULL DEFAULT 'published',
+      starts_at TEXT,closes_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS applications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,candidate_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'submitted',message TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(job_id,candidate_id)
+    );
+    CREATE TABLE IF NOT EXISTS conversations (id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS conversation_members (conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,PRIMARY KEY(conversation_id,user_id));
+    CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,content TEXT NOT NULL,read_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,type TEXT NOT NULL,title TEXT NOT NULL,content TEXT NOT NULL,is_read INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT,actor_user_id INTEGER REFERENCES users(id),action TEXT NOT NULL,target_type TEXT,target_id TEXT,metadata TEXT,ip_hash TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+  `);
+}
+
+async function ensureTableColumns(env,table,cols){
+  const info=await env.JOB_DB.prepare(`PRAGMA table_info(${table})`).all();
+  const have=new Set((info.results||[]).map(x=>x.name));
+  for(const [name,type] of Object.entries(cols)){
+    if(have.has(name)) continue;
+    try{ await env.JOB_DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`).run(); }
+    catch(err){ if(!/duplicate column/i.test(String(err?.message||err))) throw err; }
+  }
+}
+
+async function ensureBaseColumns(env){
+  await ensureTableColumns(env,'users',{phone:'TEXT',status:"TEXT DEFAULT 'active'",session_version:'INTEGER DEFAULT 1',created_at:'TEXT',updated_at:'TEXT',last_login_at:'TEXT'});
+  await ensureTableColumns(env,'candidate_profiles',{first_name:'TEXT',last_name:'TEXT',profession:'TEXT',specialty:'TEXT',city:'TEXT',location:'TEXT',education:'TEXT',experience_years:'INTEGER DEFAULT 0',skills:'TEXT',description:'TEXT',availability:'TEXT',work_types:'TEXT',photo:'TEXT',created_at:'TEXT',updated_at:'TEXT'});
+  await ensureTableColumns(env,'recruiter_profiles',{recruiter_type:'TEXT',company_name:'TEXT',activity:'TEXT',description:'TEXT',city:'TEXT',address:'TEXT',logo:'TEXT',created_at:'TEXT',updated_at:'TEXT'});
+  await ensureTableColumns(env,'subscriptions',{plan:'TEXT',started_at:'TEXT',expires_at:'TEXT',status:"TEXT DEFAULT 'active'",created_at:'TEXT',updated_at:'TEXT'});
+  await ensureTableColumns(env,'subscription_requests',{plan:'TEXT',amount:'INTEGER',payer_phone:'TEXT',transaction_id:'TEXT',status:"TEXT DEFAULT 'pending'",admin_id:'INTEGER',admin_note:'TEXT',created_at:'TEXT',processed_at:'TEXT'});
+  await ensureTableColumns(env,'jobs',{title:'TEXT',profession:'TEXT',category:'TEXT',description:'TEXT',employment_type:'TEXT',location:'TEXT',salary:'TEXT',vacancies:'INTEGER DEFAULT 1',status:"TEXT DEFAULT 'published'",starts_at:'TEXT',closes_at:'TEXT',created_at:'TEXT',updated_at:'TEXT'});
+  await ensureTableColumns(env,'applications',{status:"TEXT DEFAULT 'submitted'",message:'TEXT',created_at:'TEXT',updated_at:'TEXT'});
+  await ensureTableColumns(env,'conversations',{created_at:'TEXT',updated_at:'TEXT'});
+  await ensureTableColumns(env,'messages',{content:'TEXT',read_at:'TEXT',created_at:'TEXT'});
+  await ensureTableColumns(env,'notifications',{type:'TEXT',title:'TEXT',content:'TEXT',is_read:'INTEGER DEFAULT 0',created_at:'TEXT'});
+  await ensureTableColumns(env,'audit_logs',{actor_user_id:'INTEGER',action:'TEXT',target_type:'TEXT',target_id:'TEXT',metadata:'TEXT',ip_hash:'TEXT',created_at:'TEXT'});
+}
+
+async function ensureRuntimeSchema(env){
+  if(!runtimeSchemaReadyPromise){
+    runtimeSchemaReadyPromise=(async()=>{
+      await ensureCoreSchema(env);
+      await ensureBaseColumns(env);
+      await ensureCandidateSchema(env);
+      await ensureRecruiterSchema(env);
+      await ensureRecruitmentSchema(env);
+      await ensureRecruiterProSchema(env);
+      await ensureAdminModuleSchema(env);
+      await checkDatabase(env);
+      return true;
+    })();
+    runtimeSchemaReadyPromise.catch(()=>{ runtimeSchemaReadyPromise=null; });
+  }
+  return runtimeSchemaReadyPromise;
 }
 
 async function hashPassword(password, saltBytes){
@@ -100,9 +200,15 @@ async function audit(env,actor,action,targetType=null,targetId=null,meta=null){
   try{await env.JOB_DB.prepare('INSERT INTO audit_logs(actor_user_id,action,target_type,target_id,metadata) VALUES(?,?,?,?,?)').bind(actor||null,action,targetType,targetId?String(targetId):null,meta?JSON.stringify(meta):null).run();}catch{}
 }
 async function currentSubscription(env,userId){
-  const s=await env.JOB_DB.prepare("SELECT * FROM subscriptions WHERE user_id=? ORDER BY datetime(expires_at) DESC LIMIT 1").bind(userId).first();
+  // Priorité absolue à un abonnement payant actif. Une ligne FREE permanente ne doit jamais masquer STANDARD/BUSINESS.
+  const s=await env.JOB_DB.prepare(`SELECT * FROM subscriptions WHERE user_id=?
+    ORDER BY CASE
+      WHEN status='active' AND plan IN ('standard','business') AND datetime(expires_at)>datetime('now') THEN 0
+      WHEN status='active' AND plan='free' THEN 1
+      ELSE 2 END,
+      id DESC LIMIT 1`).bind(userId).first();
   if(!s) return null;
-  const active=new Date(s.expires_at)>new Date() && s.status==='active';
+  const active=s.status==='active' && (s.plan==='free' || new Date(s.expires_at)>new Date());
   return {...s, effective_status:active?'active':'expired'};
 }
 
@@ -111,7 +217,7 @@ async function ensureCandidateSchema(env){
   const info=await env.JOB_DB.prepare("PRAGMA table_info(candidate_profiles)").all();
   const have=new Set((info.results||[]).map(x=>x.name));
   const cols={gender:'TEXT',birth_date:'TEXT',nationality:'TEXT',marital_status:'TEXT',whatsapp:'TEXT',country:'TEXT',professional_title:'TEXT',activity_domain:'TEXT',other_skills:'TEXT',experience_level:'TEXT',current_situation:'TEXT',driving_license:'INTEGER DEFAULT 0',driving_category:'TEXT',education_level:'TEXT',target_position:'TEXT',target_domain:'TEXT',desired_contracts:'TEXT',desired_city:'TEXT',mobility:'TEXT',desired_salary:'INTEGER',accepts_travel:'INTEGER DEFAULT 0',job_alerts:'INTEGER DEFAULT 0'};
-  for(const [name,type] of Object.entries(cols)) if(!have.has(name)) await env.JOB_DB.prepare(`ALTER TABLE candidate_profiles ADD COLUMN ${name} ${type}`).run();
+  for(const [name,type] of Object.entries(cols)) if(!have.has(name)){ try{ await env.JOB_DB.prepare(`ALTER TABLE candidate_profiles ADD COLUMN ${name} ${type}`).run(); }catch(err){ if(!/duplicate column/i.test(String(err?.message||err))) throw err; } }
   await env.JOB_DB.exec(`
     CREATE TABLE IF NOT EXISTS candidate_education (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,diploma TEXT,specialty TEXT,institution TEXT,graduation_year TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     CREATE INDEX IF NOT EXISTS idx_candidate_education_user ON candidate_education(user_id);
@@ -138,7 +244,7 @@ async function ensureRecruiterSchema(env){
     email_verified:'INTEGER DEFAULT 0',phone_verified:'INTEGER DEFAULT 0',
     company_info_verified:'INTEGER DEFAULT 0',official_document_verified:'INTEGER DEFAULT 0'
   };
-  for(const [name,type] of Object.entries(cols)) if(!have.has(name)) await env.JOB_DB.prepare(`ALTER TABLE recruiter_profiles ADD COLUMN ${name} ${type}`).run();
+  for(const [name,type] of Object.entries(cols)) if(!have.has(name)){ try{ await env.JOB_DB.prepare(`ALTER TABLE recruiter_profiles ADD COLUMN ${name} ${type}`).run(); }catch(err){ if(!/duplicate column/i.test(String(err?.message||err))) throw err; } }
   await env.JOB_DB.exec(`
     CREATE TABLE IF NOT EXISTS recruiter_documents (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -253,67 +359,45 @@ async function activePaidSubscription(env,userId){
   return s||null;
 }
 async function cleanupExpiredFreeAccounts(env){
-  const lock='maintenance:subscriptions:v11';
+  const lock='maintenance:subscriptions:v24';
   try{ if(await env.JOB_KV.get(lock)) return; await env.JOB_KV.put(lock,'1',{expirationTtl:60}); }catch{}
   const now=nowISO();
 
-  // Normalise les anciennes périodes FREE à 7 jours.
-  await env.JOB_DB.prepare(`UPDATE subscriptions
-    SET expires_at=strftime('%Y-%m-%dT%H:%M:%SZ',datetime(started_at,'+7 days')),updated_at=?
-    WHERE plan='free' AND status='active'
-      AND datetime(expires_at) != datetime(started_at,'+7 days')`).bind(now).run();
-
-  // Tout abonnement payant arrivé à terme devient expiré.
+  // 1) Expire uniquement les payants réellement arrivés à terme.
   await env.JOB_DB.prepare(`UPDATE subscriptions SET status='expired',updated_at=?
     WHERE plan IN ('standard','business') AND status='active' AND datetime(expires_at)<=datetime('now')`).bind(now).run();
 
-  // Après expiration du dernier abonnement payant, le compte repasse en FREE pendant 7 jours.
-  // Cette période commence à la date d'expiration du payant, pas à la date de la prochaine visite.
-  const expiredPaid=await env.JOB_DB.prepare(`SELECT s.user_id, MAX(s.expires_at) paid_expiry
-    FROM subscriptions s JOIN users u ON u.id=s.user_id
-    WHERE s.plan IN ('standard','business') AND datetime(s.expires_at)<=datetime('now')
-      AND u.role IN ('candidate','recruiter')
-      AND NOT EXISTS(
-        SELECT 1 FROM subscriptions a WHERE a.user_id=s.user_id
-        AND a.plan IN ('standard','business') AND a.status='active' AND datetime(a.expires_at)>datetime('now')
-      )
-    GROUP BY s.user_id LIMIT 100`).all();
-
-  for(const row of (expiredPaid.results||[])){
-    const uid=Number(row.user_id), paidExpiry=row.paid_expiry;
-    const grace=await env.JOB_DB.prepare(`SELECT id FROM subscriptions WHERE user_id=? AND plan='free'
-      AND started_at=? LIMIT 1`).bind(uid,paidExpiry).first();
-    if(!grace){
-      await env.JOB_DB.prepare(`INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status,created_at,updated_at)
-        VALUES(?,?,?,strftime('%Y-%m-%dT%H:%M:%SZ',datetime(?,'+7 days')),'active',?,?)`)
-        .bind(uid,'free',paidExpiry,paidExpiry,now,now).run();
-      await env.JOB_DB.prepare(`INSERT INTO notifications(user_id,type,title,content)
-        VALUES(?,'subscription','Abonnement payant expiré','Votre compte est repassé en FREE pour 7 jours. Vos publications sont masquées et les actions Je postule / Je recrute sont désactivées. Renouvelez avant la fin des 7 jours pour éviter la désactivation du compte. Vos données restent conservées pour l’administration.')`).bind(uid).run();
-    }
-  }
-
-  // Les FREE dépassés deviennent expirés.
+  // 2) Tant qu'un payant est actif, les anciennes lignes FREE restent expirées pour ne pas fausser les statistiques.
   await env.JOB_DB.prepare(`UPDATE subscriptions SET status='expired',updated_at=?
-    WHERE plan='free' AND status='active' AND datetime(expires_at)<=datetime('now')`).bind(now).run();
+    WHERE plan='free' AND status='active'
+      AND EXISTS(SELECT 1 FROM subscriptions p WHERE p.user_id=subscriptions.user_id
+        AND p.plan IN ('standard','business') AND p.status='active' AND datetime(p.expires_at)>datetime('now'))`).bind(now).run();
 
-  // IMPORTANT V22 : on ne supprime plus physiquement les comptes FREE expirés.
-  // Ils sont désactivés afin de disparaître des contenus publics et de ne plus pouvoir se connecter,
-  // tout en restant consultables dans l'administration avec leur historique, leurs offres et candidatures.
-  // Cela évite que « Demandes & inscriptions », « Membres », « Offres » et « Candidatures » perdent leurs données.
-  await env.JOB_DB.prepare(`UPDATE users SET status='disabled',session_version=session_version+1,updated_at=?
-    WHERE role IN ('candidate','recruiter') AND status='active'
-      AND NOT EXISTS(
-        SELECT 1 FROM subscriptions p WHERE p.user_id=users.id
-        AND p.plan IN ('standard','business') AND p.status='active' AND datetime(p.expires_at)>datetime('now')
-      )
-      AND EXISTS(
-        SELECT 1 FROM subscriptions f WHERE f.user_id=users.id AND f.plan='free'
-        AND datetime(f.expires_at)<=datetime('now')
-      )
-      AND NOT EXISTS(
-        SELECT 1 FROM subscriptions f2 WHERE f2.user_id=users.id AND f2.plan='free'
-        AND f2.status='active' AND datetime(f2.expires_at)>datetime('now')
-      )`).bind(now).run();
+  // 3) Sans payant actif, la dernière ligne FREE devient permanente pour la consultation.
+  await env.JOB_DB.prepare(`UPDATE subscriptions SET status='active',expires_at='2099-12-31T23:59:59Z',updated_at=?
+    WHERE id IN (
+      SELECT MAX(f.id) FROM subscriptions f JOIN users u ON u.id=f.user_id
+      WHERE f.plan='free' AND u.role IN ('candidate','recruiter')
+        AND NOT EXISTS(SELECT 1 FROM subscriptions p WHERE p.user_id=f.user_id
+          AND p.plan IN ('standard','business') AND p.status='active' AND datetime(p.expires_at)>datetime('now'))
+      GROUP BY f.user_id
+    )`).bind(now).run();
+
+  // 4) Un ancien compte sans ligne FREE en reçoit une, sans supprimer son historique.
+  await env.JOB_DB.prepare(`INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status,created_at,updated_at)
+    SELECT u.id,'free',?,'2099-12-31T23:59:59Z','active',?,? FROM users u
+    WHERE u.role IN ('candidate','recruiter')
+      AND NOT EXISTS(SELECT 1 FROM subscriptions p WHERE p.user_id=u.id
+        AND p.plan IN ('standard','business') AND p.status='active' AND datetime(p.expires_at)>datetime('now'))
+      AND NOT EXISTS(SELECT 1 FROM subscriptions f WHERE f.user_id=u.id AND f.plan='free')`).bind(now,now,now).run();
+
+  // 5) Réactive uniquement les comptes désactivés automatiquement par les anciennes versions.
+  // Une désactivation explicite faite depuis l'Admin reste respectée grâce au dernier audit USER_STATUS_CHANGED.
+  await env.JOB_DB.prepare(`UPDATE users SET status='active',updated_at=?
+    WHERE role IN ('candidate','recruiter') AND status='disabled'
+      AND COALESCE((SELECT a.metadata FROM audit_logs a
+        WHERE a.action='USER_STATUS_CHANGED' AND a.target_type='user' AND a.target_id=CAST(users.id AS TEXT)
+        ORDER BY a.id DESC LIMIT 1),'') NOT LIKE '%\"status\":\"disabled\"%'`).bind(now).run();
 }
 
 async function ensureAdminModuleSchema(env){
@@ -379,7 +463,7 @@ async function ensureRecruiterProSchema(env){
     view_count:'INTEGER DEFAULT 0'
   };
   for(const [name,type] of Object.entries(cols)){
-    if(!have.has(name)) await env.JOB_DB.prepare(`ALTER TABLE jobs ADD COLUMN ${name} ${type}`).run();
+    if(!have.has(name)){ try{ await env.JOB_DB.prepare(`ALTER TABLE jobs ADD COLUMN ${name} ${type}`).run(); }catch(err){ if(!/duplicate column/i.test(String(err?.message||err))) throw err; } }
   }
 }
 async function handleRegister(req,env){
@@ -397,7 +481,7 @@ async function handleRegister(req,env){
     if(!userId) throw new Error('User insert did not return last_row_id');
     if(role==='candidate') { await ensureCandidateSchema(env); await env.JOB_DB.prepare('INSERT INTO candidate_profiles(user_id,first_name,last_name,gender,birth_date,nationality,marital_status,whatsapp,city,location,country,photo,job_alerts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(userId,safeText(b.first_name,100),safeText(b.last_name,100),safeText(b.gender,20),safeText(b.birth_date,20),safeText(b.nationality,100),safeText(b.marital_status,80),safeText(b.whatsapp,40),safeText(b.city,120),safeText(b.location,180),safeText(b.country,100),safeText(b.photo,900000),b.job_alerts?1:0).run(); }
     else { await ensureRecruiterSchema(env); await env.JOB_DB.prepare('INSERT INTO recruiter_profiles(user_id,first_name,last_name,job_title,whatsapp,city,country,photo,marketing_alerts,verification_status) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(userId,safeText(b.first_name,100),safeText(b.last_name,100),safeText(b.job_title,150),safeText(b.whatsapp,40),safeText(b.city,120),safeText(b.country,100),safeText(b.photo,900000),b.marketing_alerts?1:0,'unverified').run(); }
-    const expires=addDays(7);
+    const expires='2099-12-31T23:59:59Z';
     await env.JOB_DB.prepare('INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status) VALUES(?,?,?,?,?)').bind(userId,'free',nowISO(),expires,'active').run();
     const r=await env.JOB_DB.prepare('SELECT id,email,phone,role,status,session_version FROM users WHERE id=?').bind(userId).first();
     const token=await createSession(env,r); await audit(env,r.id,'REGISTER','user',r.id,{role});
@@ -474,8 +558,20 @@ async function handleSuperAdminRecover(req,env){
     message:'Compte Super Admin initialisé/récupéré. Connectez-vous maintenant avec SUPER_ADMIN_EMAIL et SUPER_ADMIN_PASSWORD configurés dans Cloudflare.'
   });
 }
+async function readLoginBody(req){
+  const ct=String(req.headers.get('content-type')||'').toLowerCase();
+  if(ct.includes('application/json')) return {body:await req.json().catch(()=>({})),nativeForm:false};
+  if(ct.includes('application/x-www-form-urlencoded')||ct.includes('multipart/form-data')){
+    const fd=await req.formData().catch(()=>null);
+    return {body:fd?Object.fromEntries(fd):{},nativeForm:true};
+  }
+  return {body:{},nativeForm:false};
+}
 async function handleLogin(req,env){
-  const b=await req.json().catch(()=>({})); const email=safeText(b.email,190).toLowerCase(), password=String(b.password||'');
+  const parsed=await readLoginBody(req);
+  const b=parsed.body;
+  const email=safeText(b.email,190).toLowerCase(), password=String(b.password||'');
+  if(!email||!password) return json({error:'E-mail et mot de passe obligatoires.'},400);
   if(!await checkRate(req,env,email)) return json({error:'Trop de tentatives. Réessayez plus tard.'},429);
   let u=await env.JOB_DB.prepare('SELECT * FROM users WHERE email=?').bind(email).first();
   if(!u && env.SUPER_ADMIN_EMAIL && env.SUPER_ADMIN_PASSWORD && email===String(env.SUPER_ADMIN_EMAIL).toLowerCase() && timingSafe(password,String(env.SUPER_ADMIN_PASSWORD))){
@@ -486,6 +582,15 @@ async function handleLogin(req,env){
   if(!u || u.status!=='active' || !(await verifyPassword(password,u.password_salt,u.password_hash))){ return json({error:'Identifiants incorrects.'},401); }
   await clearRate(req,env,email); await env.JOB_DB.prepare('UPDATE users SET last_login_at=? WHERE id=?').bind(nowISO(),u.id).run();
   const token=await createSession(env,u); await audit(env,u.id,'LOGIN','user',u.id);
+  if(parsed.nativeForm){
+    return new Response(null,{status:303,headers:{
+      'location':'/#home',
+      'set-cookie':sessionCookie(token),
+      'cache-control':'no-store',
+      'referrer-policy':'no-referrer',
+      'x-content-type-options':'nosniff'
+    }});
+  }
   return json({ok:true,user:{id:u.id,email:u.email,role:u.role},subscription:await currentSubscription(env,u.id)},200,{'set-cookie':sessionCookie(token)});
 }
 
@@ -1063,14 +1168,16 @@ async function api(req,env,url){
     if(target.role==='super_admin') return json({error:'Le Super Admin permanent n’utilise pas d’abonnement.'},400);
     const plan=['free','standard','business'].includes(b.plan)?b.plan:null;
     const days=Number(b.days||0);
-    if(!plan||days<1||days>730) return json({error:'Formule ou durée invalide.'},400);
+    if(!plan||(plan!=='free'&&(days<1||days>730))) return json({error:'Formule ou durée invalide.'},400);
+    const expiresAt=plan==='free'?'2099-12-31T23:59:59Z':addDays(days);
+    const notice=plan==='free'?'Votre formule est maintenant FREE avec consultation permanente. Les actions professionnelles nécessitent STANDARD ou BUSINESS.':`Votre formule est maintenant ${plan.toUpperCase()} pour ${days} jour(s).`;
     await env.JOB_DB.batch([
       env.JOB_DB.prepare("UPDATE subscriptions SET status='expired',updated_at=? WHERE user_id=? AND status='active'").bind(nowISO(),id),
-      env.JOB_DB.prepare("INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status) VALUES(?,?,?,?, 'active')").bind(id,plan,nowISO(),addDays(days)),
+      env.JOB_DB.prepare("INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status) VALUES(?,?,?,?, 'active')").bind(id,plan,nowISO(),expiresAt),
       env.JOB_DB.prepare("UPDATE users SET status='active',updated_at=? WHERE id=? AND role IN ('candidate','recruiter')").bind(nowISO(),id),
-      env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?,'subscription','Abonnement modifié par GLOBAL EMPLOI',?)").bind(id,`Votre formule est maintenant ${plan.toUpperCase()} pour ${days} jour(s).`)
+      env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?,'subscription','Abonnement modifié par GLOBAL EMPLOI',?)").bind(id,notice)
     ]);
-    await audit(env,s.user.id,'ADMIN_SUBSCRIPTION_CHANGED','user',id,{plan,days});
+    await audit(env,s.user.id,'ADMIN_SUBSCRIPTION_CHANGED','user',id,{plan,days:plan==='free'?null:days});
     return json({ok:true});
   }
   if(/^\/api\/admin\/users\/\d+\/notify$/.test(p)&&m==='POST'){
@@ -1249,14 +1356,45 @@ export default {
     const url=new URL(request.url);
     try{
       assertBindings(env);
-      if(url.pathname.startsWith('/api/')){
-        if(url.pathname!=='/api/health'){
-          await checkDatabase(env);
-          await cleanupExpiredFreeAccounts(env);
+
+      // Une URL contenant des identifiants ne doit jamais être conservée ou propagée.
+      // On la nettoie immédiatement avant de servir l'application.
+      if(!url.pathname.startsWith('/api/')){
+        const sensitive=['email','password','recovery_token','token'];
+        let dirty=false;
+        for(const key of sensitive){ if(url.searchParams.has(key)){ url.searchParams.delete(key); dirty=true; } }
+        if(dirty){
+          const clean=url.pathname+(url.searchParams.toString()?`?${url.searchParams.toString()}`:'')+url.hash;
+          return new Response(null,{status:303,headers:{
+            'location':clean||'/',
+            'cache-control':'no-store',
+            'referrer-policy':'no-referrer',
+            'x-content-type-options':'nosniff'
+          }});
         }
-        return await api(request,env,url);
       }
-      return env.ASSETS.fetch(request);
+
+      if(url.pathname.startsWith('/api/')){
+        // V24 : la base est initialisée/réparée AVANT toute vérification ou lecture de session.
+        // Ainsi une table manquante ne bloque plus /api/session ni les pages Admin/Recruteur/Demandeur.
+        await ensureRuntimeSchema(env);
+        await cleanupExpiredFreeAccounts(env);
+        const response=await api(request,env,url);
+        const h=new Headers(response.headers);
+        h.set('cache-control','no-store');
+        h.set('referrer-policy','no-referrer');
+        h.set('x-content-type-options','nosniff');
+        h.set('x-frame-options','DENY');
+        return new Response(response.body,{status:response.status,statusText:response.statusText,headers:h});
+      }
+      const asset=await env.ASSETS.fetch(request);
+      const h=new Headers(asset.headers);
+      h.set('referrer-policy','no-referrer');
+      h.set('x-content-type-options','nosniff');
+      h.set('x-frame-options','DENY');
+      h.set('permissions-policy','camera=(), microphone=(), geolocation=()');
+      if(url.pathname==='/'||url.pathname.endsWith('.html')) h.set('cache-control','no-store');
+      return new Response(asset.body,{status:asset.status,statusText:asset.statusText,headers:h});
     } catch(err){
       if(err instanceof Response) return err;
       const requestId=request.headers.get('cf-ray')||crypto.randomUUID();
