@@ -6,6 +6,7 @@ app=(root/'public/app.js').read_text()
 required={
  'session':'/api/session',
  'dashboard':'/api/dashboard-metrics',
+ 'data linkage':'/api/data-linkage',
  'profile':'/api/profile',
  'recruiter jobs':'/api/recruiter/jobs',
  'recruiter applications':'/api/recruiter/applications',

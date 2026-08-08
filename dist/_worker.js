@@ -42,7 +42,7 @@ function assertAssetsBinding(env){
 
 async function checkDatabase(env){
   try{
-    const required=['users','candidate_profiles','recruiter_profiles','subscriptions','subscription_requests','jobs','applications','conversations','conversation_members','messages','notifications','audit_logs'];
+    const required=['users','candidate_profiles','candidate_education','candidate_experiences','candidate_languages','candidate_documents','recruiter_profiles','recruiter_documents','subscriptions','subscription_requests','jobs','applications','recruitment_requests','conversations','conversation_members','messages','notifications','audit_logs','app_settings','support_messages'];
     const rows=await env.JOB_DB.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
     const have=new Set((rows.results||[]).map(r=>r.name));
     const missing=required.filter(t=>!have.has(t));
@@ -83,7 +83,6 @@ let runtimeSchemaReadyPromise = null;
 
 async function ensureCoreSchema(env){
   await env.JOB_DB.exec(`
-    PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT NOT NULL UNIQUE,
@@ -160,39 +159,115 @@ async function ensureBaseColumns(env){
   await ensureTableColumns(env,'audit_logs',{actor_user_id:'INTEGER',action:'TEXT',target_type:'TEXT',target_id:'TEXT',metadata:'TEXT',ip_hash:'TEXT',created_at:'TEXT'});
 }
 
+async function ensureDataLinkage(env){
+  // V26 : users.id est l'identifiant canonique de toutes les relations métier.
+  // 1) Chaque compte métier possède son profil et au moins un abonnement.
+  await env.JOB_DB.exec(`
+    INSERT INTO candidate_profiles(user_id,created_at,updated_at)
+    SELECT u.id,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+    FROM users u
+    WHERE u.role='candidate'
+      AND NOT EXISTS(SELECT 1 FROM candidate_profiles p WHERE p.user_id=u.id);
+
+    INSERT INTO recruiter_profiles(user_id,created_at,updated_at,verification_status)
+    SELECT u.id,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,'unverified'
+    FROM users u
+    WHERE u.role='recruiter'
+      AND NOT EXISTS(SELECT 1 FROM recruiter_profiles p WHERE p.user_id=u.id);
+
+    INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status,created_at,updated_at)
+    SELECT u.id,'free',CURRENT_TIMESTAMP,'2099-12-31T23:59:59Z','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+    FROM users u
+    WHERE u.role IN ('candidate','recruiter')
+      AND NOT EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=u.id);
+  `);
+
+  // 2) Répare les anciennes liaisons qui ont utilisé profile.id au lieu de users.id.
+  // On ne touche jamais une liaison déjà valide vers un utilisateur du bon rôle.
+  await env.JOB_DB.exec(`
+    UPDATE jobs
+    SET recruiter_id=(SELECT rp.user_id FROM recruiter_profiles rp WHERE rp.id=jobs.recruiter_id LIMIT 1),
+        updated_at=CURRENT_TIMESTAMP
+    WHERE NOT EXISTS(
+      SELECT 1 FROM users u WHERE u.id=jobs.recruiter_id AND u.role='recruiter'
+    )
+    AND EXISTS(
+      SELECT 1 FROM recruiter_profiles rp
+      JOIN users u ON u.id=rp.user_id AND u.role='recruiter'
+      WHERE rp.id=jobs.recruiter_id
+    );
+
+    UPDATE applications
+    SET candidate_id=(SELECT cp.user_id FROM candidate_profiles cp WHERE cp.id=applications.candidate_id LIMIT 1),
+        updated_at=CURRENT_TIMESTAMP
+    WHERE NOT EXISTS(
+      SELECT 1 FROM users u WHERE u.id=applications.candidate_id AND u.role='candidate'
+    )
+    AND EXISTS(
+      SELECT 1 FROM candidate_profiles cp
+      JOIN users u ON u.id=cp.user_id AND u.role='candidate'
+      WHERE cp.id=applications.candidate_id
+    );
+
+    UPDATE recruitment_requests
+    SET recruiter_id=(SELECT rp.user_id FROM recruiter_profiles rp WHERE rp.id=recruitment_requests.recruiter_id LIMIT 1),
+        updated_at=CURRENT_TIMESTAMP
+    WHERE NOT EXISTS(
+      SELECT 1 FROM users u WHERE u.id=recruitment_requests.recruiter_id AND u.role='recruiter'
+    )
+    AND EXISTS(
+      SELECT 1 FROM recruiter_profiles rp
+      JOIN users u ON u.id=rp.user_id AND u.role='recruiter'
+      WHERE rp.id=recruitment_requests.recruiter_id
+    );
+
+    UPDATE recruitment_requests
+    SET candidate_id=(SELECT cp.user_id FROM candidate_profiles cp WHERE cp.id=recruitment_requests.candidate_id LIMIT 1),
+        updated_at=CURRENT_TIMESTAMP
+    WHERE NOT EXISTS(
+      SELECT 1 FROM users u WHERE u.id=recruitment_requests.candidate_id AND u.role='candidate'
+    )
+    AND EXISTS(
+      SELECT 1 FROM candidate_profiles cp
+      JOIN users u ON u.id=cp.user_id AND u.role='candidate'
+      WHERE cp.id=recruitment_requests.candidate_id
+    );
+  `);
+
+  // 3) Contrôle réel des liaisons utilisées par les espaces Demandeur/Recruteur.
+  const [missingCandidateProfiles,missingRecruiterProfiles,badJobs,badApplications,badRecruiterRequests,badCandidateRequests]=await Promise.all([
+    env.JOB_DB.prepare("SELECT COUNT(*) n FROM users u WHERE u.role='candidate' AND NOT EXISTS(SELECT 1 FROM candidate_profiles p WHERE p.user_id=u.id)").first(),
+    env.JOB_DB.prepare("SELECT COUNT(*) n FROM users u WHERE u.role='recruiter' AND NOT EXISTS(SELECT 1 FROM recruiter_profiles p WHERE p.user_id=u.id)").first(),
+    env.JOB_DB.prepare("SELECT COUNT(*) n FROM jobs j WHERE NOT EXISTS(SELECT 1 FROM users u WHERE u.id=j.recruiter_id AND u.role='recruiter')").first(),
+    env.JOB_DB.prepare("SELECT COUNT(*) n FROM applications a WHERE NOT EXISTS(SELECT 1 FROM users u WHERE u.id=a.candidate_id AND u.role='candidate') OR NOT EXISTS(SELECT 1 FROM jobs j WHERE j.id=a.job_id)").first(),
+    env.JOB_DB.prepare("SELECT COUNT(*) n FROM recruitment_requests r WHERE NOT EXISTS(SELECT 1 FROM users u WHERE u.id=r.recruiter_id AND u.role='recruiter')").first(),
+    env.JOB_DB.prepare("SELECT COUNT(*) n FROM recruitment_requests r WHERE NOT EXISTS(SELECT 1 FROM users u WHERE u.id=r.candidate_id AND u.role='candidate')").first()
+  ]);
+  return {
+    missing_candidate_profiles:Number(missingCandidateProfiles?.n||0),
+    missing_recruiter_profiles:Number(missingRecruiterProfiles?.n||0),
+    orphan_jobs:Number(badJobs?.n||0),
+    orphan_applications:Number(badApplications?.n||0),
+    orphan_recruiter_requests:Number(badRecruiterRequests?.n||0),
+    orphan_candidate_requests:Number(badCandidateRequests?.n||0)
+  };
+}
+
 async function ensureRuntimeSchema(env){
   if(!runtimeSchemaReadyPromise){
     runtimeSchemaReadyPromise=(async()=>{
-      const errors=[];
-      const step=async(name,fn)=>{
-        try{ await fn(); }
-        catch(err){
-          errors.push({name,message:err?.message||String(err)});
-          console.error('GLOBAL_EMPLOI_SCHEMA_REPAIR_STEP_FAILED',{step:name,message:err?.message||String(err),cause:err?.cause?.message||null});
-        }
-      };
-
-      // IMPORTANT V25 : aucune réparation optionnelle ne doit bloquer /api/session.
-      // On tente chaque étape indépendamment, puis on vérifie seulement que D1 et la table users sont lisibles.
-      await step('core',()=>ensureCoreSchema(env));
-      await step('base_columns',()=>ensureBaseColumns(env));
-      await step('candidate',()=>ensureCandidateSchema(env));
-      await step('recruiter',()=>ensureRecruiterSchema(env));
-      await step('recruitment',()=>ensureRecruitmentSchema(env));
-      await step('recruiter_pro',()=>ensureRecruiterProSchema(env));
-      await step('admin_modules',()=>ensureAdminModuleSchema(env));
-
-      try{
-        await env.JOB_DB.prepare('SELECT id FROM users LIMIT 1').first();
-      }catch(err){
-        const e=new Error(`D1 core unavailable: ${err?.message||err}`);
-        e.code='D1_CORE_UNAVAILABLE';
-        e.publicMessage='La table principale des comptes est inaccessible dans D1.';
-        throw e;
-      }
-
-      if(errors.length) console.warn('GLOBAL_EMPLOI_SCHEMA_REPAIR_DEGRADED',{errors});
-      return {ok:true,degraded:errors.length>0,errors};
+      // V26 : aucune erreur de schéma ou de liaison n'est masquée.
+      // Si une étape obligatoire échoue, l'API renvoie l'erreur réelle au lieu d'une page vide.
+      await ensureCoreSchema(env);
+      await ensureBaseColumns(env);
+      await ensureCandidateSchema(env);
+      await ensureRecruiterSchema(env);
+      await ensureRecruitmentSchema(env);
+      await ensureRecruiterProSchema(env);
+      await ensureAdminModuleSchema(env);
+      const linkage=await ensureDataLinkage(env);
+      await checkDatabase(env);
+      return {ok:true,linkage};
     })();
     runtimeSchemaReadyPromise.catch(()=>{ runtimeSchemaReadyPromise=null; });
   }
@@ -218,6 +293,7 @@ async function getSession(req, env){
 }
 async function requireSession(req,env){ const s=await getSession(req,env); if(!s) throw new Response(JSON.stringify({error:'Authentification requise'}),{status:401,headers:{'content-type':'application/json'}}); return s; }
 async function requireAdmin(req,env){ const s=await requireSession(req,env); if(s.user.role!=='super_admin') throw new Response(JSON.stringify({error:'Accès interdit'}),{status:403,headers:{'content-type':'application/json'}}); return s; }
+async function requireRole(req,env,role){ const s=await requireSession(req,env); if(s.user.role!==role) throw new Response(JSON.stringify({error:`Accès réservé au rôle ${role}.`}),{status:403,headers:{'content-type':'application/json'}}); return s; }
 async function createSession(env,user){ const token=crypto.randomUUID()+crypto.randomUUID().replaceAll('-',''); await env.JOB_KV.put(`sess:${token}`,JSON.stringify({userId:user.id,version:user.session_version}),{expirationTtl:86400}); return token; }
 
 async function checkRate(req,env,email){
@@ -230,23 +306,16 @@ async function audit(env,actor,action,targetType=null,targetId=null,meta=null){
   try{await env.JOB_DB.prepare('INSERT INTO audit_logs(actor_user_id,action,target_type,target_id,metadata) VALUES(?,?,?,?,?)').bind(actor||null,action,targetType,targetId?String(targetId):null,meta?JSON.stringify(meta):null).run();}catch{}
 }
 async function currentSubscription(env,userId){
-  // Une panne de la table d'abonnement ne doit jamais invalider une session utilisateur valide.
-  try{
-    const s=await env.JOB_DB.prepare(`SELECT * FROM subscriptions WHERE user_id=?
-      ORDER BY CASE
-        WHEN status='active' AND plan IN ('standard','business') AND datetime(expires_at)>datetime('now') THEN 0
-        WHEN status='active' AND plan='free' THEN 1
-        ELSE 2 END,
-        id DESC LIMIT 1`).bind(userId).first();
-    if(!s) return null;
-    const active=s.status==='active' && (s.plan==='free' || new Date(s.expires_at)>new Date());
-    return {...s, effective_status:active?'active':'expired'};
-  }catch(err){
-    console.error('GLOBAL_EMPLOI_SUBSCRIPTION_READ_FAILED',{userId,message:err?.message||String(err),cause:err?.cause?.message||null});
-    return null;
-  }
+  const s=await env.JOB_DB.prepare(`SELECT * FROM subscriptions WHERE user_id=?
+    ORDER BY CASE
+      WHEN status='active' AND plan IN ('standard','business') AND datetime(expires_at)>datetime('now') THEN 0
+      WHEN status='active' AND plan='free' THEN 1
+      ELSE 2 END,
+      id DESC LIMIT 1`).bind(userId).first();
+  if(!s) return null;
+  const active=s.status==='active' && (s.plan==='free' || new Date(s.expires_at)>new Date());
+  return {...s, effective_status:active?'active':'expired'};
 }
-
 
 async function ensureCandidateSchema(env){
   const info=await env.JOB_DB.prepare("PRAGMA table_info(candidate_profiles)").all();
@@ -395,7 +464,8 @@ async function activePaidSubscription(env,userId){
 }
 async function cleanupExpiredFreeAccounts(env){
   const lock='maintenance:subscriptions:v24';
-  try{ if(await env.JOB_KV.get(lock)) return; await env.JOB_KV.put(lock,'1',{expirationTtl:60}); }catch{}
+  if(await env.JOB_KV.get(lock)) return;
+  await env.JOB_KV.put(lock,'1',{expirationTtl:60});
   const now=nowISO();
 
   // 1) Expire uniquement les payants réellement arrivés à terme.
@@ -470,17 +540,10 @@ async function ensureAdminModuleSchema(env){
   `);
 }
 async function ensureAdminDataReady(env){
-  // V25 : une étape de réparation optionnelle ne doit pas masquer toutes les autres pages Admin.
-  const steps=[
-    ['recruiter',ensureRecruiterSchema],
-    ['recruitment',ensureRecruitmentSchema],
-    ['admin_modules',ensureAdminModuleSchema],
-    ['recruiter_pro',ensureRecruiterProSchema]
-  ];
-  for(const [name,fn] of steps){
-    try{ await fn(env); }
-    catch(err){ console.error('GLOBAL_EMPLOI_ADMIN_SCHEMA_STEP_FAILED',{step:name,message:err?.message||String(err),cause:err?.cause?.message||null}); }
-  }
+  // V26 : l'Admin utilise le même schéma/lien canonique que les autres rôles.
+  // Aucune exception n'est avalée : une liaison cassée doit être diagnostiquée et corrigée.
+  await ensureRuntimeSchema(env);
+  return ensureDataLinkage(env);
 }
 async function getAppSettings(env){
   await ensureAdminModuleSchema(env);
@@ -642,7 +705,8 @@ async function api(req,env,url){
     await checkDatabase(env);
     await checkKV(env);
     const admin=await superAdminStatus(env);
-    return json({ok:true,service:'GLOBAL EMPLOI',d1:'ok',kv:'ok',assets:'ok',super_admin:{configured:admin.configured,exists:admin.exists,active:admin.active}});
+    const linkage=await ensureDataLinkage(env);
+    return json({ok:true,service:'GLOBAL EMPLOI',d1:'ok',kv:'ok',assets:'ok',linkage,super_admin:{configured:admin.configured,exists:admin.exists,active:admin.active}});
   }
   if(p==='/api/admin-recovery/status'&&m==='GET') return json(await superAdminStatus(env));
   if(p==='/api/admin-recovery/recover'&&m==='POST') return handleSuperAdminRecover(req,env);
@@ -679,6 +743,25 @@ async function api(req,env,url){
     try{await env.JOB_DB.prepare('SELECT COUNT(*) n FROM subscriptions WHERE user_id=?').bind(s.user.id).first();checks.subscriptions=true}catch{}
     const ok=Object.values(checks).every(Boolean);
     return json({ok,service:'GLOBAL EMPLOI RECRUTEUR',checks});
+  }
+  if(p==='/api/data-linkage'&&m==='GET'){
+    const s=await requireSession(req,env);
+    const linkage=await ensureDataLinkage(env);
+    let own={};
+    if(s.user.role==='candidate'){
+      own.profile=!!(await env.JOB_DB.prepare('SELECT 1 ok FROM candidate_profiles WHERE user_id=?').bind(s.user.id).first());
+      own.applications=Number((await env.JOB_DB.prepare('SELECT COUNT(*) n FROM applications WHERE candidate_id=?').bind(s.user.id).first())?.n||0);
+      own.recruitment_requests=Number((await env.JOB_DB.prepare('SELECT COUNT(*) n FROM recruitment_requests WHERE candidate_id=?').bind(s.user.id).first())?.n||0);
+    }else if(s.user.role==='recruiter'){
+      own.profile=!!(await env.JOB_DB.prepare('SELECT 1 ok FROM recruiter_profiles WHERE user_id=?').bind(s.user.id).first());
+      own.jobs=Number((await env.JOB_DB.prepare('SELECT COUNT(*) n FROM jobs WHERE recruiter_id=?').bind(s.user.id).first())?.n||0);
+      own.applications=Number((await env.JOB_DB.prepare('SELECT COUNT(*) n FROM applications a JOIN jobs j ON j.id=a.job_id WHERE j.recruiter_id=?').bind(s.user.id).first())?.n||0);
+    }else{
+      own.users=Number((await env.JOB_DB.prepare("SELECT COUNT(*) n FROM users WHERE role IN ('candidate','recruiter')").first())?.n||0);
+      own.jobs=Number((await env.JOB_DB.prepare('SELECT COUNT(*) n FROM jobs').first())?.n||0);
+      own.applications=Number((await env.JOB_DB.prepare('SELECT COUNT(*) n FROM applications').first())?.n||0);
+    }
+    return json({ok:true,user_id:s.user.id,role:s.user.role,linkage,own});
   }
   if(p==='/api/dashboard-metrics'&&m==='GET'){
     const s=await requireSession(req,env), uid=s.user.id, role=s.user.role;
@@ -734,7 +817,7 @@ async function api(req,env,url){
     const ph=await createPassword(neu); await env.JOB_DB.prepare('UPDATE users SET password_hash=?,password_salt=?,session_version=session_version+1,updated_at=? WHERE id=?').bind(ph.hash,ph.salt,nowISO(),s.user.id).run(); await env.JOB_KV.delete(`sess:${s.token}`); await audit(env,s.user.id,'PASSWORD_CHANGED','user',s.user.id); return json({ok:true},200,{'set-cookie':clearCookie()});
   }
   if((p==='/api/profile'||p==='/api/load')&&m==='GET'){
-    const s=await requireSession(req,env); const table=s.user.role==='recruiter'?'recruiter_profiles':'candidate_profiles'; if(s.user.role==='candidate') await ensureCandidateSchema(env); if(s.user.role==='recruiter') await ensureRecruiterSchema(env); const row=await env.JOB_DB.prepare(`SELECT * FROM ${table} WHERE user_id=?`).bind(s.user.id).first(); if(s.user.role==='candidate'){ const education=await env.JOB_DB.prepare('SELECT * FROM candidate_education WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const experiences=await env.JOB_DB.prepare('SELECT * FROM candidate_experiences WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const languages=await env.JOB_DB.prepare('SELECT * FROM candidate_languages WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const documents=await env.JOB_DB.prepare('SELECT id,document_type,file_name,mime_type,size_bytes,created_at FROM candidate_documents WHERE user_id=? ORDER BY id DESC').bind(s.user.id).all(); return json({profile:row,education:education.results||[],experiences:experiences.results||[],languages:languages.results||[],documents:documents.results||[],completeness:await candidateCompleteness(env,s.user.id),subscription:await currentSubscription(env,s.user.id)}); } if(s.user.role==='recruiter'){ const documents=await env.JOB_DB.prepare('SELECT id,document_type,file_name,mime_type,size_bytes,created_at FROM recruiter_documents WHERE user_id=? ORDER BY id DESC').bind(s.user.id).all(); return json({profile:row,documents:documents.results||[],completeness:await recruiterCompleteness(env,s.user.id),subscription:await currentSubscription(env,s.user.id)}); } return json({profile:row,subscription:await currentSubscription(env,s.user.id)});
+    const s=await requireSession(req,env); await ensureDataLinkage(env); const table=s.user.role==='recruiter'?'recruiter_profiles':'candidate_profiles'; if(s.user.role==='candidate') await ensureCandidateSchema(env); if(s.user.role==='recruiter') await ensureRecruiterSchema(env); const row=await env.JOB_DB.prepare(`SELECT * FROM ${table} WHERE user_id=?`).bind(s.user.id).first(); if(s.user.role==='candidate'){ const education=await env.JOB_DB.prepare('SELECT * FROM candidate_education WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const experiences=await env.JOB_DB.prepare('SELECT * FROM candidate_experiences WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const languages=await env.JOB_DB.prepare('SELECT * FROM candidate_languages WHERE user_id=? ORDER BY id').bind(s.user.id).all(); const documents=await env.JOB_DB.prepare('SELECT id,document_type,file_name,mime_type,size_bytes,created_at FROM candidate_documents WHERE user_id=? ORDER BY id DESC').bind(s.user.id).all(); return json({profile:row,education:education.results||[],experiences:experiences.results||[],languages:languages.results||[],documents:documents.results||[],completeness:await candidateCompleteness(env,s.user.id),subscription:await currentSubscription(env,s.user.id)}); } if(s.user.role==='recruiter'){ const documents=await env.JOB_DB.prepare('SELECT id,document_type,file_name,mime_type,size_bytes,created_at FROM recruiter_documents WHERE user_id=? ORDER BY id DESC').bind(s.user.id).all(); return json({profile:row,documents:documents.results||[],completeness:await recruiterCompleteness(env,s.user.id),subscription:await currentSubscription(env,s.user.id)}); } return json({profile:row,subscription:await currentSubscription(env,s.user.id)});
   }
   if((p==='/api/profile'||p==='/api/save')&&m==='POST'){
     const s=await requireSession(req,env), b=await req.json().catch(()=>({}));
@@ -1416,13 +1499,10 @@ export default {
       }
 
       if(url.pathname.startsWith('/api/')){
-        // V25 : réparation tolérante. Une table/module optionnel en défaut ne doit plus bloquer la session.
+        // V26 : schéma et liaisons obligatoires, sans masquer les erreurs.
         await ensureRuntimeSchema(env);
-        try{ await cleanupExpiredFreeAccounts(env); }
-        catch(err){
-          console.error('GLOBAL_EMPLOI_MAINTENANCE_FAILED',{message:err?.message||String(err),cause:err?.cause?.message||null});
-          // Ne jamais transformer une maintenance d'abonnement en panne générale du site.
-        }
+        await cleanupExpiredFreeAccounts(env);
+        await ensureDataLinkage(env);
         const response=await api(request,env,url);
         const h=new Headers(response.headers);
         h.set('cache-control','no-store');
@@ -1445,8 +1525,10 @@ export default {
       const requestId=request.headers.get('cf-ray')||crypto.randomUUID();
       console.error('GLOBAL_EMPLOI_SERVER_ERROR',{requestId,code:err?.code||'SERVER_ERROR',message:err?.message||String(err),cause:err?.cause?.message||null,stack:err?.stack});
       const code=err?.code||'SERVER_ERROR';
+      const raw=String(err?.message||'');
+      const safeDetail=(code.startsWith('D1_')||code.includes('SCHEMA')||code.includes('LINK')) ? raw.slice(0,500) : '';
       const message=err?.publicMessage||'Erreur serveur. Consultez les journaux Cloudflare avec la référence indiquée.';
-      return json({error:message,code,reference:requestId},500);
+      return json({error:message,code,reference:requestId,detail:safeDetail},500);
     }
   }
 };

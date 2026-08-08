@@ -14,6 +14,7 @@ const api=async(path,options={})=>{
     const e=new Error(d.error||`Erreur HTTP ${r.status}`);
     e.code=d.code||`HTTP_${r.status}`;
     e.reference=d.reference||'';
+    e.detail=d.detail||'';
     throw e;
   }
   return d;
@@ -289,6 +290,7 @@ async function render(view){
   const c=$('#viewContent'),t=$('#viewTitle');
   try{
     state.session=await api('/api/session');
+    await api('/api/data-linkage');
     buildAccountMenu();buildConnectedTopNav();updateSubChip();
   }catch(sessionError){
     if(sessionError?.code==='HTTP_401'){
@@ -335,9 +337,10 @@ async function render(view){
   }catch(e){
     console.error('VIEW_RENDER_ERROR',view,e);
     const ref=e.reference?`<div class="error-reference">Référence : <code>${esc(e.reference)}</code></div>`:'';
+    const detail=e.detail?`<div class="error-reference">Détail D1 : <code>${esc(e.detail)}</code></div>`:'';
     c.innerHTML=`<div class="panel error-panel professional-error">
       <div class="error-icon">!</div>
-      <div><h3>Impossible de charger cette section</h3><p>${esc(e.message||'Erreur inconnue')}</p>${ref}
+      <div><h3>Impossible de charger cette section</h3><p>${esc(e.message||'Erreur inconnue')}</p>${ref}${detail}
       <div class="error-actions"><button class="btn primary" id="retryView">Réessayer</button><button class="btn outline-blue" id="errorHome">Retour à l’accueil</button></div></div>
     </div>`;
     $('#retryView')?.addEventListener('click',()=>render(view));
@@ -346,9 +349,9 @@ async function render(view){
 }
 async function renderDashboard(){
   const u=state.session.user,s=state.session.subscription;
-  let m={};try{m=await api('/api/dashboard-metrics')}catch{}
+  const m=await api('/api/dashboard-metrics');
   if(u.role==='recruiter'){
-    let p={completeness:{percent:0,verification_status:'unverified'}};try{p=await api('/api/profile')}catch{}
+    const p=await api('/api/profile');
     const c=p.completeness||{},paid=hasActivePaidPlan();
     const expiry=s?.expires_at?new Date(s.expires_at).toLocaleDateString('fr-FR'):'—';
     $('#viewContent').innerHTML=`
@@ -379,10 +382,10 @@ async function renderDashboard(){
     return;
   }
   if(u.role==='candidate'){
-    let c={percent:0,recommendations:[]};try{c=await api('/api/profile/completeness')}catch{}
+    const c=await api('/api/profile/completeness');
     const paid=hasActivePaidPlan(), expiry=s?.plan==='free'?'sans expiration':s?.expires_at?new Date(s.expires_at).toLocaleDateString('fr-FR'):'—';
     const statusCounts={submitted:0,reviewing:0,shortlisted:0,interview:0,accepted:0,rejected:0};
-    let apps={applications:[]};try{apps=await api('/api/candidate/applications');apps.applications.forEach(a=>statusCounts[a.status]=(statusCounts[a.status]||0)+1)}catch{}
+    const apps=await api('/api/candidate/applications');apps.applications.forEach(a=>statusCounts[a.status]=(statusCounts[a.status]||0)+1);
     $('#viewContent').innerHTML=`
       <section class="role-dashboard candidate-command-center">
         <div class="dashboard-welcome">

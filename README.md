@@ -324,3 +324,13 @@ Le Worker V22 garde néanmoins une logique d'auto-réparation des modules Admin 
 - Les API de données ne dépendent plus du binding `ASSETS`; il est vérifié uniquement pour les fichiers statiques.
 - La lecture d'abonnement ne peut plus invalider une session si la table d'abonnement rencontre un incident temporaire.
 - Les erreurs frontend affichent désormais le code serveur en plus de la référence Cloudflare.
+
+
+## V26 — liaisons de données strictes
+
+- `users.id` est la clé canonique des profils, offres, candidatures et propositions.
+- Réparation automatique des anciennes liaisons `candidate_profiles.id` / `recruiter_profiles.id`.
+- Création automatique du profil manquant pour les comptes existants et d'un abonnement FREE si absent.
+- Les erreurs obligatoires de schéma/liaison ne sont plus masquées.
+- Route authentifiée de diagnostic : `GET /api/data-linkage`.
+- Migration : `migrations/0011_strict_user_data_links.sql`.
