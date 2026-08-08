@@ -77,8 +77,8 @@
       </div>
 
       <div class="hero-cta-row">
-        <button class="btn primary big" data-open-register="candidate">Je cherche un emploi</button>
-        <button class="btn soft-blue big" data-open-register="recruiter">Je recrute</button>
+        <button class="btn primary big" data-open-register="candidate" data-home-primary="candidate">Je cherche un emploi</button>
+        <button class="btn soft-blue big" data-open-register="recruiter" data-home-primary="recruiter">Je recrute</button>
       </div>
       <div class="hero-directory-row">
         <button class="btn outline-blue" id="browseJobsHome">Voir toutes les offres disponibles</button>
@@ -106,9 +106,12 @@
   <div class="section-head">
     <div><span class="section-kicker">OFFRES D’EMPLOI</span><h2>Toutes les offres disponibles</h2><p>Seules les offres publiées par des recruteurs disposant d’un abonnement STANDARD ou BUSINESS actif sont affichées.</p></div>
   </div>
-  <div class="market-search">
+  <div class="market-search public-directory-search">
     <div class="field"><label>Emploi / poste recherché</label><input id="jobsSearchQ" placeholder="Ex. Comptable, Chauffeur, Maçon, Commercial…"></div>
     <div class="field"><label>Ville proposée</label><input id="jobsSearchCity" placeholder="Ex. Abidjan, Bouaké, Yamoussoukro…"></div>
+    <div class="field"><label>Type de contrat</label><select id="jobsSearchContract"><option value="">Tous</option><option>CDI</option><option>CDD</option><option>Stage</option><option>Intérim</option><option>Freelance</option><option>Temps partiel</option><option>Journalier</option><option>Apprentissage</option><option>Mission</option></select></div>
+    <div class="field"><label>Domaine / catégorie</label><input id="jobsSearchCategory" placeholder="Ex. BTP, Commerce, Informatique…"></div>
+    <div class="field"><label>Date de publication</label><select id="jobsSearchDays"><option value="0">Toutes les dates</option><option value="1">Aujourd’hui</option><option value="7">7 derniers jours</option><option value="30">30 derniers jours</option></select></div>
     <button id="jobsSearchBtn" class="btn primary">⌕ Rechercher</button>
   </div>
   <div id="publicJobsCount" class="results-count"></div>
@@ -119,9 +122,12 @@
   <div class="section-head">
     <div><span class="section-kicker">PROFILS / CANDIDATS</span><h2>Découvrez les talents disponibles</h2><p>Consultez les profils professionnels actifs et recherchez un candidat par métier ou par ville.</p></div>
   </div>
-  <div class="market-search">
+  <div class="market-search public-directory-search">
     <div class="field"><label>Métier / compétence</label><input id="candidatesSearchQ" placeholder="Ex. Informaticien, Couturière, Chauffeur, Comptable…"></div>
     <div class="field"><label>Ville</label><input id="candidatesSearchCity" placeholder="Ex. Abidjan, Bouaké, Diabo…"></div>
+    <div class="field"><label>Expérience</label><input id="candidatesSearchExperience" placeholder="Ex. 2 ans, 5 ans…"></div>
+    <div class="field"><label>Niveau d’études</label><input id="candidatesSearchEducation" placeholder="Ex. BAC, BTS, Licence…"></div>
+    <div class="field"><label>Disponibilité</label><input id="candidatesSearchAvailability" placeholder="Ex. Immédiate, sous 15 jours…"></div>
     <button id="candidatesSearchBtn" class="btn primary">⌕ Rechercher</button>
   </div>
   <div id="publicCandidatesCount" class="results-count"></div>

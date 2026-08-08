@@ -974,7 +974,7 @@ async function api(req,env,url){
     const rows=await env.JOB_DB.prepare(`SELECT j.*,u.email recruiter_email,r.company_name,
       (SELECT COUNT(*) FROM applications a WHERE a.job_id=j.id) application_count
       FROM jobs j JOIN users u ON u.id=j.recruiter_id LEFT JOIN recruiter_profiles r ON r.user_id=j.recruiter_id
-      ORDER BY j.id DESC LIMIT 500`).all();
+      ORDER BY j.id DESC`).all();
     return json({jobs:rows.results||[]});
   }
   if(/^\/api\/admin\/jobs\/\d+$/.test(p)&&m==='DELETE'){
@@ -989,17 +989,17 @@ async function api(req,env,url){
       cu.email candidate_email,ru.email recruiter_email,r.company_name
       FROM applications a JOIN jobs j ON j.id=a.job_id
       JOIN users cu ON cu.id=a.candidate_id JOIN users ru ON ru.id=j.recruiter_id
-      LEFT JOIN recruiter_profiles r ON r.user_id=ru.id ORDER BY a.id DESC LIMIT 500`).all();
+      LEFT JOIN recruiter_profiles r ON r.user_id=ru.id ORDER BY a.id DESC`).all();
     return json({applications:rows.results||[]});
   }
   if(p==='/api/admin/audit-logs'&&m==='GET'){
     await requireAdmin(req,env);
-    const rows=await env.JOB_DB.prepare(`SELECT a.*,u.email actor_email FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_user_id ORDER BY a.id DESC LIMIT 300`).all();
+    const rows=await env.JOB_DB.prepare(`SELECT a.*,u.email actor_email FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_user_id ORDER BY a.id DESC`).all();
     return json({logs:rows.results||[]});
   }
   if(p==='/api/admin/subscription-history'&&m==='GET'){
     await requireAdmin(req,env);
-    const rows=await env.JOB_DB.prepare(`SELECT s.*,u.email,u.role FROM subscriptions s JOIN users u ON u.id=s.user_id ORDER BY s.id DESC LIMIT 500`).all();
+    const rows=await env.JOB_DB.prepare(`SELECT s.*,u.email,u.role FROM subscriptions s JOIN users u ON u.id=s.user_id ORDER BY s.id DESC`).all();
     return json({subscriptions:rows.results||[]});
   }
   if(/^\/api\/admin\/users\/\d+\/status$/.test(p)&&m==='POST'){
@@ -1083,7 +1083,7 @@ async function api(req,env,url){
       FROM subscription_requests sr JOIN users u ON u.id=sr.user_id
       LEFT JOIN users a ON a.id=sr.admin_id
       WHERE (?='' OR sr.status=?)
-      ORDER BY sr.id DESC LIMIT 500`).bind(status,status).all();
+      ORDER BY sr.id DESC`).bind(status,status).all();
     return json({requests:rows.results||[]});
   }
   if(p==='/api/admin/recruiter-verifications/all'&&m==='GET'){
@@ -1091,7 +1091,7 @@ async function api(req,env,url){
     const rows=await env.JOB_DB.prepare(`SELECT r.user_id,r.first_name,r.last_name,r.job_title,r.company_name,r.organization_type,r.sector,r.company_city,
       r.verification_status,r.verification_note,r.updated_at,u.email,u.phone
       FROM recruiter_profiles r JOIN users u ON u.id=r.user_id
-      ORDER BY CASE r.verification_status WHEN 'pending' THEN 0 WHEN 'unverified' THEN 1 ELSE 2 END,r.updated_at DESC LIMIT 500`).all();
+      ORDER BY CASE r.verification_status WHEN 'pending' THEN 0 WHEN 'unverified' THEN 1 ELSE 2 END,r.updated_at DESC`).all();
     return json({recruiters:rows.results||[]});
   }
   if(/^\/api\/admin\/jobs\/\d+\/status$/.test(p)&&m==='POST'){
@@ -1149,7 +1149,7 @@ async function api(req,env,url){
     if(s.user.role==='super_admin'){
       rows=await env.JOB_DB.prepare(`SELECT sm.*,su.email sender_email,ru.email recipient_email FROM support_messages sm
         LEFT JOIN users su ON su.id=sm.sender_user_id LEFT JOIN users ru ON ru.id=sm.recipient_user_id
-        ORDER BY sm.id DESC LIMIT 300`).all();
+        ORDER BY sm.id DESC`).all();
     }else{
       rows=await env.JOB_DB.prepare(`SELECT sm.*,su.email sender_email,ru.email recipient_email FROM support_messages sm
         LEFT JOIN users su ON su.id=sm.sender_user_id LEFT JOIN users ru ON ru.id=sm.recipient_user_id
@@ -1187,18 +1187,18 @@ async function api(req,env,url){
       env.JOB_DB.prepare(`SELECT u.id,u.email,u.phone,u.role,u.status,u.created_at,u.last_login_at,
         s.plan,s.expires_at,s.status subscription_status
         FROM users u LEFT JOIN subscriptions s ON s.id=(SELECT id FROM subscriptions WHERE user_id=u.id ORDER BY id DESC LIMIT 1)
-        WHERE u.role IN ('candidate','recruiter') ORDER BY u.id DESC LIMIT 2000`).all(),
-      env.JOB_DB.prepare(`SELECT sr.*,u.email,u.role FROM subscription_requests sr JOIN users u ON u.id=sr.user_id ORDER BY sr.id DESC LIMIT 2000`).all(),
+        WHERE u.role IN ('candidate','recruiter') ORDER BY u.id DESC`).all(),
+      env.JOB_DB.prepare(`SELECT sr.*,u.email,u.role FROM subscription_requests sr JOIN users u ON u.id=sr.user_id ORDER BY sr.id DESC`).all(),
       env.JOB_DB.prepare(`SELECT r.user_id,r.first_name,r.last_name,r.company_name,r.verification_status,r.verification_note,r.updated_at,u.email,u.phone
-        FROM recruiter_profiles r JOIN users u ON u.id=r.user_id ORDER BY r.updated_at DESC LIMIT 2000`).all(),
+        FROM recruiter_profiles r JOIN users u ON u.id=r.user_id ORDER BY r.updated_at DESC`).all(),
       env.JOB_DB.prepare(`SELECT sm.*,su.email sender_email,ru.email recipient_email FROM support_messages sm
-        LEFT JOIN users su ON su.id=sm.sender_user_id LEFT JOIN users ru ON ru.id=sm.recipient_user_id ORDER BY sm.id DESC LIMIT 2000`).all(),
+        LEFT JOIN users su ON su.id=sm.sender_user_id LEFT JOIN users ru ON ru.id=sm.recipient_user_id ORDER BY sm.id DESC`).all(),
       env.JOB_DB.prepare(`SELECT rr.*,ru.email recruiter_email,cu.email candidate_email,rp.company_name
         FROM recruitment_requests rr JOIN users ru ON ru.id=rr.recruiter_id JOIN users cu ON cu.id=rr.candidate_id
-        LEFT JOIN recruiter_profiles rp ON rp.user_id=rr.recruiter_id ORDER BY rr.id DESC LIMIT 2000`).all(),
+        LEFT JOIN recruiter_profiles rp ON rp.user_id=rr.recruiter_id ORDER BY rr.id DESC`).all(),
       env.JOB_DB.prepare(`SELECT a.id,a.status,a.created_at,j.id job_id,j.title,cu.email candidate_email,ru.email recruiter_email,rp.company_name
         FROM applications a JOIN jobs j ON j.id=a.job_id JOIN users cu ON cu.id=a.candidate_id JOIN users ru ON ru.id=j.recruiter_id
-        LEFT JOIN recruiter_profiles rp ON rp.user_id=ru.id ORDER BY a.id DESC LIMIT 2000`).all()
+        LEFT JOIN recruiter_profiles rp ON rp.user_id=ru.id ORDER BY a.id DESC`).all()
     ]);
     return json({
       registrations:registrations.results||[],
@@ -1209,7 +1209,7 @@ async function api(req,env,url){
       applications:applications.results||[]
     });
   }
-  if(p==='/api/admin/users'&&m==='GET'){ await requireAdmin(req,env); const rows=await env.JOB_DB.prepare(`SELECT u.id,u.email,u.phone,u.role,u.status,u.created_at,s.plan,s.expires_at FROM users u LEFT JOIN subscriptions s ON s.id=(SELECT id FROM subscriptions WHERE user_id=u.id ORDER BY datetime(expires_at) DESC LIMIT 1) ORDER BY u.id DESC LIMIT 500`).all(); return json({users:rows.results}); }
+  if(p==='/api/admin/users'&&m==='GET'){ await requireAdmin(req,env); const rows=await env.JOB_DB.prepare(`SELECT u.id,u.email,u.phone,u.role,u.status,u.created_at,s.plan,s.expires_at FROM users u LEFT JOIN subscriptions s ON s.id=(SELECT id FROM subscriptions WHERE user_id=u.id ORDER BY datetime(expires_at) DESC LIMIT 1) ORDER BY u.id DESC`).all(); return json({users:rows.results||[]}); }
   return json({error:'Route API introuvable.'},404);
 }
 

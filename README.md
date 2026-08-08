@@ -265,3 +265,17 @@ La migration `migrations/0007_admin_modules.sql` ajoute les tables `app_settings
 - Les boutons **Je cherche un emploi** / **Je recrute** sont reliés directement aux inscriptions correspondantes pour les visiteurs non connectés.
 - Pour les comptes FREE connectés, les actions professionnelles **Je postule** / **Je recrute** redirigent vers Abonnement ; STANDARD/BUSINESS actif exécute l'action.
 - Le Super Admin ne reçoit aucun message d'abonnement.
+
+
+## V21 — Corrections de synchronisation et actions FREE
+
+- Suppression du double gestionnaire des boutons **Je cherche un emploi** / **Je recrute** : une seule logique de navigation est utilisée.
+- Visiteur non connecté : ouverture directe de l’inscription correspondant au rôle.
+- Demandeur FREE sur **Je cherche un emploi** et Recruteur FREE sur **Je recrute** : redirection directe vers **Abonnement**.
+- Les boutons **Voir toutes les offres disponibles** et **Voir tous les talents disponibles** restent publics et accessibles sans inscription.
+- Recherche publique enrichie : contrat, catégorie et date pour les offres ; expérience, études et disponibilité pour les talents.
+- Les cartes publiques disposent maintenant de boutons **Voir l’offre / Voir le profil** et **Je postule / Je recrute** selon le rôle.
+- Les écrans à chargement asynchrone sensibles affichent une erreur avec **Réessayer** et **Retour à l’accueil** au lieu de rester bloqués sur un chargement.
+- Les plafonds de 500 / 2000 enregistrements ont été retirés des principales vues Super Admin afin que toutes les inscriptions et demandes restent accessibles.
+- Le journal Admin n’est plus redéfini deux fois : la version filtrable reste active.
+- Aucun secret Super Admin n’est ajouté au frontend, au README ou à `wrangler.jsonc`.

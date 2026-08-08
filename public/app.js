@@ -102,50 +102,44 @@ function loginModal(){
 }
 
 $('#loginBtn').onclick=loginModal;$('#registerBtn').onclick=()=>registerModal();
+function handleRoleEntry(wanted){
+  if(wanted!=='candidate'&&wanted!=='recruiter')return;
+  if(!state.session){registerModal(wanted);return;}
+  const role=state.session.user.role;
+  if(wanted==='candidate'){
+    if(role==='candidate'){
+      if(!hasActivePaidPlan()){
+        navigateView('subscription');
+        toast('Votre compte FREE peut consulter les offres. Activez STANDARD ou BUSINESS pour utiliser les actions professionnelles.');
+        return;
+      }
+      openPublicPage('jobs');return;
+    }
+    // Recruteurs et Super Admin peuvent consulter librement les offres publiques.
+    openPublicPage('jobs');return;
+  }
+  if(role==='recruiter'){
+    if(!hasActivePaidPlan()){
+      navigateView('subscription');
+      toast('Votre compte FREE peut consulter les talents. Activez STANDARD ou BUSINESS pour utiliser les actions professionnelles.');
+      return;
+    }
+    openPublicPage('candidates');return;
+  }
+  // Demandeurs et Super Admin peuvent consulter librement les talents publics.
+  openPublicPage('candidates');
+}
 document.addEventListener('click',e=>{
   const b=e.target.closest?.('[data-open-register]');
   if(!b)return;
   e.preventDefault();
-  const wanted=b.dataset.openRegister;
-  if(!state.session){registerModal(wanted);return;}
-  if(wanted==='candidate'){
-    if(state.session.user.role==='candidate'){navigateView('jobs');return;}
-    if(state.session.user.role==='super_admin'){showPublicHome('home');return;}
-    toast('Vous êtes connecté comme recruteur. Utilisez votre espace Recruteur pour rechercher des candidats.');
-    navigateView('candidates');return;
-  }
-  if(wanted==='recruiter'){
-    if(state.session.user.role==='recruiter'){navigateView('candidates');return;}
-    if(state.session.user.role==='super_admin'){showPublicHome('home');return;}
-    toast('Vous êtes connecté comme demandeur d’emploi. Utilisez votre espace pour consulter les offres.');
-    navigateView('jobs');
-  }
+  handleRoleEntry(b.dataset.openRegister);
 });
 
-
 function bindHomePrimaryActions(){
-  const candidateBtn=document.querySelector('[data-open-register="candidate"]');
-  const recruiterBtn=document.querySelector('[data-open-register="recruiter"]');
-  if(candidateBtn&&!candidateBtn.dataset.directBound){
-    candidateBtn.dataset.directBound='1';
-    candidateBtn.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();
-      if(!state.session){registerModal('candidate');return}
-      if(state.session.user.role==='candidate'){openPublicPage('jobs');return}
-      if(state.session.user.role==='recruiter'){openPublicPage('candidates');return}
-      showPublicHome('home');
-    });
-  }
-  if(recruiterBtn&&!recruiterBtn.dataset.directBound){
-    recruiterBtn.dataset.directBound='1';
-    recruiterBtn.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();
-      if(!state.session){registerModal('recruiter');return}
-      if(state.session.user.role==='recruiter'){openPublicPage('candidates');return}
-      if(state.session.user.role==='candidate'){openPublicPage('jobs');return}
-      showPublicHome('home');
-    });
-  }
-  $('#browseJobsHome')?.addEventListener('click',()=>openPublicPage('jobs'));
-  $('#browseCandidatesHome')?.addEventListener('click',()=>openPublicPage('candidates'));
+  const jobs=$('#browseJobsHome'),candidates=$('#browseCandidatesHome');
+  if(jobs)jobs.onclick=()=>openPublicPage('jobs');
+  if(candidates)candidates.onclick=()=>openPublicPage('candidates');
 }
 
 const logout=async()=>{closeAccountMenu();await api('/api/logout',{method:'POST'}).catch(()=>{});location.reload()};
@@ -223,8 +217,10 @@ function showPublicHome(anchor='home'){
   state.view='home';
   $('#guestHome').classList.remove('hidden');
   $('#app').classList.add('hidden');
+  document.querySelectorAll('#guestHome > section').forEach(s=>s.classList.remove('public-page-hidden'));
   syncViewNavigation('home');
   closeAccountMenu();
+  history.replaceState(null,'','#home');
   if(anchor){setTimeout(()=>document.getElementById(anchor)?.scrollIntoView({behavior:'smooth',block:'start'}),20)}
 }
 function navigateView(view){
@@ -258,11 +254,13 @@ async function boot(){
 }
 function showGuest(){
   state.view='home';$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');
+  document.querySelectorAll('#guestHome > section').forEach(s=>s.classList.remove('public-page-hidden'));
   $('#loginBtn').classList.remove('hidden');$('#registerBtn').classList.remove('hidden');$('#accountControl').classList.add('hidden');
-  buildConnectedTopNav();closeAccountMenu();loadPublicStats();
+  buildConnectedTopNav();closeAccountMenu();syncViewNavigation('home');loadPublicStats();
 }
 function showConnectedHome(){
   const u=state.session.user;state.view='home';$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');
+  document.querySelectorAll('#guestHome > section').forEach(s=>s.classList.remove('public-page-hidden'));
   $('#loginBtn').classList.add('hidden');$('#registerBtn').classList.add('hidden');$('#accountControl').classList.remove('hidden');
   buildAccountMenu();buildConnectedTopNav();updateSubChip();syncViewNavigation('home');loadPublicStats();
 }
@@ -389,7 +387,7 @@ async function renderDashboard(){
       </section>`;
     $$('[data-dash-view]').forEach(b=>b.onclick=()=>navigateView(b.dataset.dashView));return;
   }
-  $('#viewContent').innerHTML=`<div class="dashboard-welcome"><div><span class="section-kicker">SUPER ADMIN • PERMANENT</span><h2>Centre de pilotage</h2><p>Gérez tous les membres inscrits et l’activité de GLOBAL EMPLOI.</p></div></div><div class="dashboard-metrics admin-metrics"><button class="dash-metric" data-dash-view="inbox"><span>●</span><div><small>Demandes & inscriptions</small><strong>${formatCount((m.pending_subscriptions||0)+(m.pending_verifications||0))}</strong></div></button><button class="dash-metric" data-dash-view="members"><span>♙</span><div><small>Membres</small><strong>${formatCount(m.total_users)}</strong></div></button><button class="dash-metric" data-dash-view="activations"><span>◈</span><div><small>Activations</small><strong>${formatCount(m.pending_subscriptions)}</strong></div></button><button class="dash-metric" data-dash-view="jobsadmin"><span>▣</span><div><small>Offres</small><strong>${formatCount(m.jobs)}</strong></div></button><button class="dash-metric" data-dash-view="applicationsadmin"><span>✓</span><div><small>Candidatures</small><strong>${formatCount(m.applications)}</strong></div></button></div>`;
+  $('#viewContent').innerHTML=`<div class="dashboard-welcome"><div><span class="section-kicker">SUPER ADMIN • PERMANENT</span><h2>Centre de pilotage</h2><p>Gérez tous les membres inscrits et l’activité de GLOBAL EMPLOI.</p></div></div><div class="dashboard-metrics admin-metrics"><button class="dash-metric" data-dash-view="inbox"><span>●</span><div><small>Inscriptions</small><strong>${formatCount(m.total_users)}</strong></div></button><button class="dash-metric" data-dash-view="members"><span>♙</span><div><small>Membres</small><strong>${formatCount(m.total_users)}</strong></div></button><button class="dash-metric" data-dash-view="activations"><span>◈</span><div><small>Activations</small><strong>${formatCount(m.pending_subscriptions)}</strong></div></button><button class="dash-metric" data-dash-view="jobsadmin"><span>▣</span><div><small>Offres</small><strong>${formatCount(m.jobs)}</strong></div></button><button class="dash-metric" data-dash-view="applicationsadmin"><span>✓</span><div><small>Candidatures</small><strong>${formatCount(m.applications)}</strong></div></button></div>`;
   $$('[data-dash-view]').forEach(b=>b.onclick=()=>navigateView(b.dataset.dashView));
 }
 async function renderProfile(){const d=await api('/api/profile'),p=d.profile||{};if(state.session.user.role==='super_admin')return $('#viewContent').innerHTML='<div class="panel">Le Super Admin ne possède pas de profil candidat/recruteur.</div>';const candidate=state.session.user.role==='candidate';if(!candidate){
@@ -546,17 +544,26 @@ async function renderJobs(){
       <div id="candidateJobsGrid" class="offer-grid dynamic-grid"><div class="directory-skeleton"><span></span><span></span><span></span></div></div><div id="candidateJobsPagination" class="public-pagination"></div>`;
     $('.candidate-subscription-shortcut')?.addEventListener('click',()=>navigateView('subscription'));
     const load=async(page=1)=>{
-      const qs=new URLSearchParams({q:$('#candidateJobQ').value.trim(),city:$('#candidateJobCity').value.trim(),contract:$('#candidateJobContract').value,category:$('#candidateJobCategory').value.trim(),days:$('#candidateJobDays').value,page:String(page),per_page:'12'});
-      const d=await api(`/api/jobs?${qs}`),pg=d.pagination||{page:1,pages:1,total:d.jobs.length};
-      $('#candidateJobsCount').textContent=`${formatCount(pg.total)} offre${pg.total>1?'s':''} disponible${pg.total>1?'s':''} • Page ${pg.page}/${pg.pages}`;
-      $('#candidateJobsGrid').innerHTML=d.jobs.length?d.jobs.map(j=>`<article class="offer-card candidate-job-card"><div class="offer-top"><div class="company-logo">${esc((j.company_name||'GE').slice(0,2).toUpperCase())}</div><span class="offer-badge new">${esc((j.plan||'standard').toUpperCase())}</span></div><h3>${esc(j.title)}</h3><p class="company">${esc(j.company_name||'Entreprise')}</p><div class="offer-meta"><span>⌖ ${esc(j.location||'')}</span><span>▣ ${esc(j.employment_type||'')}</span></div><p class="card-summary">${esc((j.description||'').slice(0,150))}${(j.description||'').length>150?'…':''}</p><div class="card-actions"><button class="btn outline-blue candidate-job-detail" data-id="${j.id}">Voir l’offre</button><button class="btn primary candidate-job-apply" data-id="${j.id}">Je postule</button></div></article>`).join(''):'<div class="panel empty-state">Aucune offre ne correspond à votre recherche.</div>';
-      $$('.candidate-job-detail').forEach(b=>b.onclick=()=>openJobDetail(Number(b.dataset.id)));
-      $$('.candidate-job-apply').forEach(b=>b.onclick=()=>requirePaidCandidateAction(()=>applyFromPublic(Number(b.dataset.id))));
-      renderDirectoryPagination('#candidateJobsPagination',pg,p=>load(p));
+      const grid=$('#candidateJobsGrid');
+      grid.innerHTML='<div class="directory-skeleton"><span></span><span></span><span></span></div>';
+      $('#candidateJobsPagination').innerHTML='';
+      try{
+        const qs=new URLSearchParams({q:$('#candidateJobQ').value.trim(),city:$('#candidateJobCity').value.trim(),contract:$('#candidateJobContract').value,category:$('#candidateJobCategory').value.trim(),days:$('#candidateJobDays').value,page:String(page),per_page:'12'});
+        const d=await api(`/api/jobs?${qs}`),pg=d.pagination||{page:1,pages:1,total:d.jobs.length};
+        $('#candidateJobsCount').textContent=`${formatCount(pg.total)} offre${pg.total>1?'s':''} disponible${pg.total>1?'s':''} • Page ${pg.page}/${pg.pages}`;
+        grid.innerHTML=d.jobs.length?d.jobs.map(j=>`<article class="offer-card candidate-job-card"><div class="offer-top"><div class="company-logo">${j.logo?`<img src="${esc(j.logo)}" alt="">`:esc((j.company_name||'GE').slice(0,2).toUpperCase())}</div><span class="offer-badge new">${esc((j.plan||'standard').toUpperCase())}</span></div><h3>${esc(j.title)}</h3><p class="company">${esc(j.company_name||'Entreprise')}</p><div class="offer-meta"><span>⌖ ${esc(j.location||'')}</span><span>▣ ${esc(j.employment_type||'')}</span></div><p class="card-summary">${esc((j.description||'').slice(0,150))}${(j.description||'').length>150?'…':''}</p><div class="card-actions"><button class="btn outline-blue candidate-job-detail" data-id="${j.id}">Voir l’offre</button><button class="btn primary candidate-job-apply" data-id="${j.id}">Je postule</button></div></article>`).join(''):'<div class="panel empty-state">Aucune offre ne correspond à votre recherche.</div>';
+        $$('.candidate-job-detail').forEach(b=>b.onclick=()=>openJobDetail(Number(b.dataset.id)));
+        $$('.candidate-job-apply').forEach(b=>b.onclick=()=>requirePaidCandidateAction(()=>applyFromPublic(Number(b.dataset.id))));
+        renderDirectoryPagination('#candidateJobsPagination',pg,p=>load(p));
+      }catch(err){
+        $('#candidateJobsCount').textContent='';
+        grid.innerHTML=directoryError('Impossible de charger les offres.',err,()=>load(page));
+        bindDirectoryRetry(grid,()=>load(page));
+      }
     };
     $('#candidateJobSearchBtn').onclick=()=>load(1);
     ['candidateJobQ','candidateJobCity','candidateJobCategory'].forEach(id=>$('#'+id).onkeydown=e=>{if(e.key==='Enter')load(1)});
-    load(1);return;
+    await load(1);return;
   }
   if(role==='super_admin'){navigateView('jobsadmin');return;}
   const paid=hasActivePaidPlan();
@@ -727,18 +734,19 @@ async function renderCandidates(){
       <div class="field"><label>Disponibilité</label><input id="memberCandAvail" placeholder="Immédiatement…"></div>
       <button id="memberCandSearch" class="btn primary">Rechercher</button>
     </div>
-    <div id="memberCandGrid" class="candidate-market-grid"><div class="page-skeleton compact"><span></span><span></span></div></div><div id="memberCandPagination" class="public-pagination"></div>`;
+    <div id="memberCandCount" class="results-count"></div><div id="memberCandGrid" class="candidate-market-grid"><div class="page-skeleton compact"><span></span><span></span></div></div><div id="memberCandPagination" class="public-pagination"></div>`;
   const load=async(page=1)=>{
     try{
       const qs=new URLSearchParams({q:$('#memberCandQ').value.trim(),city:$('#memberCandCity').value.trim(),experience:$('#memberCandExp').value.trim(),education:$('#memberCandEdu').value.trim(),availability:$('#memberCandAvail').value.trim(),page:String(page),per_page:'12'});
       const d=await api(`/api/candidates?${qs}`),pg=d.pagination||{page:1,pages:1,total:d.candidates.length};
+      $('#memberCandCount').textContent=`${formatCount(pg.total)} talent${pg.total>1?'s':''} disponible${pg.total>1?'s':''} • Page ${pg.page}/${pg.pages}`;
       $('#memberCandGrid').innerHTML=d.candidates.length?d.candidates.map(c=>`<article class="candidate-market-card professional-card"><div class="candidate-photo">${c.photo?`<img src="${esc(c.photo)}" alt="">`:`<span>${esc(((c.first_name||'P')[0]||'P')+((c.last_name||'')[0]||''))}</span>`}</div><div class="candidate-body"><div class="card-topline"><span class="pill">${esc(c.availability||'Profil')}</span><span class="plan-mini">${esc((c.plan||'standard').toUpperCase())}</span></div><h3>${esc(`${c.first_name||''} ${c.last_name||''}`.trim()||'Professionnel')}</h3><strong>${esc(c.professional_title||c.profession||'Profil professionnel')}</strong><p class="muted">⌖ ${esc(c.city||c.country||'')} • ${esc(c.experience_level||'Expérience non précisée')}</p><p>${esc((c.skills||c.specialty||'').slice(0,160))}</p></div><div class="candidate-card-footer"><button class="btn outline-blue cand-detail" data-id="${c.id}">Voir profil</button>${role==='recruiter'?`<button class="btn primary cand-recruit" data-id="${c.id}">Je recrute</button>`:''}</div></article>`).join(''):'<div class="panel empty-state">Aucun profil ne correspond aux filtres.</div>';
       $$('.cand-detail').forEach(b=>b.onclick=()=>openCandidateDetail(Number(b.dataset.id)));
       $$('.cand-recruit').forEach(b=>b.onclick=()=>requirePaidRecruiterAction(()=>recruitFromPublic(Number(b.dataset.id))));
       renderDirectoryPagination('#memberCandPagination',pg,p=>load(p));
-    }catch(err){$('#memberCandGrid').innerHTML=`<div class="panel error-panel">${esc(err.message)}</div>`}
+    }catch(err){$('#memberCandCount').textContent='';const grid=$('#memberCandGrid');grid.innerHTML=directoryError('Impossible de charger les talents.',err,()=>load(page));bindDirectoryRetry(grid,()=>load(page))}
   };
-  $('#memberCandSearch').onclick=()=>load(1);load(1);
+  $('#memberCandSearch').onclick=()=>load(1);await load(1);
 }
 function messageModal(receiver){modal(`<h2>Envoyer un message</h2><form id="messageForm"><div class="field"><label>Message</label><textarea name="content" required></textarea></div><br><button class="btn primary">Envoyer</button></form>`);$('#messageForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/messages',{method:'POST',body:JSON.stringify({receiver_id:receiver,content:new FormData(e.target).get('content')})});closeModal();toast('Message envoyé')}catch(err){toast(err.message)}}}
 async function renderMessages(){
@@ -959,19 +967,23 @@ async function renderAdminActivations(){
     <div class="admin-tabs"><button class="admin-tab active" data-status="pending">En attente</button><button class="admin-tab" data-status="approved">Activées</button><button class="admin-tab" data-status="rejected">Rejetées</button><button class="admin-tab" data-status="">Historique complet</button></div>
     <div id="activationList"><div class="page-skeleton compact"><span></span><span></span></div></div>`;
   const draw=async status=>{
-    const d=await load(status);
-    $('#activationList').innerHTML=`<div class="application-cards">${d.requests.map(x=>`<article class="application-card">
-      <div class="card-topline"><b>${esc(x.email)}</b><span class="pill">${esc(x.status)}</span></div>
-      <h3>${esc(x.plan.toUpperCase())} — ${formatCount(x.amount)} FCFA</h3>
-      <div class="application-info"><span><small>Rôle</small>${esc(x.role)}</span><span><small>Téléphone paiement</small>${esc(x.payer_phone)}</span><span><small>ID transaction</small>${esc(x.transaction_id)}</span><span><small>Date</small>${new Date(x.created_at).toLocaleString('fr-FR')}</span></div>
-      ${x.admin_note?`<p class="application-message">${esc(x.admin_note)}</p>`:''}
-      ${x.status==='pending'?`<div class="application-actions"><button class="btn primary approve" data-id="${x.id}">Activer</button><button class="btn danger reject" data-id="${x.id}">Paiement non trouvé</button></div>`:`<small>Traité ${x.processed_at?'le '+new Date(x.processed_at).toLocaleString('fr-FR'):''}${x.admin_email?' par '+esc(x.admin_email):''}</small>`}
-    </article>`).join('')||'<div class="panel empty-state">Aucune demande dans cette catégorie.</div>'}</div>`;
-    $$('.approve').forEach(b=>b.onclick=async()=>{await adminAction(b.dataset.id,'approve');draw(status)});
-    $$('.reject').forEach(b=>b.onclick=async()=>{await adminAction(b.dataset.id,'reject');draw(status)});
+    const box=$('#activationList');
+    box.innerHTML='<div class="page-skeleton compact"><span></span><span></span></div>';
+    try{
+      const d=await load(status);
+      box.innerHTML=`<div class="application-cards">${d.requests.map(x=>`<article class="application-card">
+        <div class="card-topline"><b>${esc(x.email)}</b><span class="pill">${esc(x.status)}</span></div>
+        <h3>${esc(x.plan.toUpperCase())} — ${formatCount(x.amount)} FCFA</h3>
+        <div class="application-info"><span><small>Rôle</small>${esc(x.role)}</span><span><small>Téléphone paiement</small>${esc(x.payer_phone)}</span><span><small>ID transaction</small>${esc(x.transaction_id)}</span><span><small>Date</small>${new Date(x.created_at).toLocaleString('fr-FR')}</span></div>
+        ${x.admin_note?`<p class="application-message">${esc(x.admin_note)}</p>`:''}
+        ${x.status==='pending'?`<div class="application-actions"><button class="btn primary approve" data-id="${x.id}">Activer</button><button class="btn danger reject" data-id="${x.id}">Paiement non trouvé</button></div>`:`<small>Traité ${x.processed_at?'le '+new Date(x.processed_at).toLocaleString('fr-FR'):''}${x.admin_email?' par '+esc(x.admin_email):''}</small>`}
+      </article>`).join('')||'<div class="panel empty-state">Aucune demande dans cette catégorie.</div>'}</div>`;
+      $$('.approve').forEach(b=>b.onclick=async()=>{await adminAction(b.dataset.id,'approve');await draw(status)});
+      $$('.reject').forEach(b=>b.onclick=async()=>{await adminAction(b.dataset.id,'reject');await draw(status)});
+    }catch(err){box.innerHTML=directoryError('Impossible de charger les activations.',err);bindDirectoryRetry(box,()=>draw(status))}
   };
   $$('.admin-tab').forEach(b=>b.onclick=()=>{$$('.admin-tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');draw(b.dataset.status)});
-  draw('pending');
+  await draw('pending');
 }
 
 async function renderAdminVerifications(){
@@ -1030,25 +1042,29 @@ async function renderAdminReports(){
     <div id="adminReportContent"><div class="page-skeleton compact"><span></span><span></span></div></div>`;
   let current=null;
   const draw=async()=>{
-    current=await api(`/api/admin/report?days=${encodeURIComponent($('#adminReportDays').value)}`);
-    $('#adminReportContent').innerHTML=`
-      <div class="dashboard-metrics admin-metrics">
-        <div class="dash-metric"><span>♙</span><div><small>Nouveaux membres</small><strong>${formatCount(current.new_users)}</strong></div></div>
-        <div class="dash-metric"><span>♧</span><div><small>Nouveaux demandeurs</small><strong>${formatCount(current.new_candidates)}</strong></div></div>
-        <div class="dash-metric"><span>▦</span><div><small>Nouveaux recruteurs</small><strong>${formatCount(current.new_recruiters)}</strong></div></div>
-        <div class="dash-metric"><span>▣</span><div><small>Nouvelles offres</small><strong>${formatCount(current.new_jobs)}</strong></div></div>
-        <div class="dash-metric"><span>✓</span><div><small>Candidatures</small><strong>${formatCount(current.new_applications)}</strong></div></div>
-        <div class="dash-metric"><span>◈</span><div><small>Recettes théoriques</small><strong>${formatCount(current.theoretical_revenue)} F</strong></div></div>
-      </div>
-      <div class="dashboard-columns" style="margin-top:18px">
-        <div class="dashboard-card"><h3>Abonnements enregistrés sur la période</h3><div class="admin-split"><div><strong>${formatCount(current.standard)}</strong><span>STANDARD</span></div><div><strong>${formatCount(current.business)}</strong><span>BUSINESS</span></div><div><strong>${formatCount(current.expired_paid)}</strong><span>Payants expirés</span></div></div></div>
-        <div class="dashboard-card"><h3>Traitement administratif</h3><p><b>${formatCount(current.pending_activations)}</b> activation(s) encore en attente.</p><p class="muted">La valeur financière est indicative et calculée à partir des activations enregistrées dans GLOBAL EMPLOI.</p></div>
-      </div>`;
+    const box=$('#adminReportContent');
+    box.innerHTML='<div class="page-skeleton compact"><span></span><span></span></div>';
+    try{
+      current=await api(`/api/admin/report?days=${encodeURIComponent($('#adminReportDays').value)}`);
+      box.innerHTML=`
+        <div class="dashboard-metrics admin-metrics">
+          <div class="dash-metric"><span>♙</span><div><small>Nouveaux membres</small><strong>${formatCount(current.new_users)}</strong></div></div>
+          <div class="dash-metric"><span>♧</span><div><small>Nouveaux demandeurs</small><strong>${formatCount(current.new_candidates)}</strong></div></div>
+          <div class="dash-metric"><span>▦</span><div><small>Nouveaux recruteurs</small><strong>${formatCount(current.new_recruiters)}</strong></div></div>
+          <div class="dash-metric"><span>▣</span><div><small>Nouvelles offres</small><strong>${formatCount(current.new_jobs)}</strong></div></div>
+          <div class="dash-metric"><span>✓</span><div><small>Candidatures</small><strong>${formatCount(current.new_applications)}</strong></div></div>
+          <div class="dash-metric"><span>◈</span><div><small>Recettes théoriques</small><strong>${formatCount(current.theoretical_revenue)} F</strong></div></div>
+        </div>
+        <div class="dashboard-columns" style="margin-top:18px">
+          <div class="dashboard-card"><h3>Abonnements enregistrés sur la période</h3><div class="admin-split"><div><strong>${formatCount(current.standard)}</strong><span>STANDARD</span></div><div><strong>${formatCount(current.business)}</strong><span>BUSINESS</span></div><div><strong>${formatCount(current.expired_paid)}</strong><span>Payants expirés</span></div></div></div>
+          <div class="dashboard-card"><h3>Traitement administratif</h3><p><b>${formatCount(current.pending_activations)}</b> activation(s) encore en attente.</p><p class="muted">La valeur financière est indicative et calculée à partir des activations enregistrées dans GLOBAL EMPLOI.</p></div>
+        </div>`;
+    }catch(err){current=null;box.innerHTML=directoryError('Impossible de charger le rapport.',err);bindDirectoryRetry(box,draw)}
   };
   $('#adminReportLoad').onclick=draw;
   $('#adminReportPrint').onclick=()=>window.print();
   $('#adminReportCsv').onclick=()=>{if(!current)return;const rows=[['Indicateur','Valeur'],['Période (jours)',current.days],['Nouveaux membres',current.new_users],['Nouveaux demandeurs',current.new_candidates],['Nouveaux recruteurs',current.new_recruiters],['Nouvelles offres',current.new_jobs],['Candidatures',current.new_applications],['STANDARD',current.standard],['BUSINESS',current.business],['Payants expirés',current.expired_paid],['Activations en attente',current.pending_activations],['Recettes théoriques FCFA',current.theoretical_revenue]];downloadCsv('global-emploi-rapport.csv',rows)};
-  draw();
+  await draw();
 }
 function downloadCsv(filename,rows){
   const content=rows.map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(';')).join('\n');
@@ -1068,11 +1084,6 @@ async function renderAdminLogs(){
     $('#auditTable').innerHTML=`<div class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Acteur</th><th>Action</th><th>Cible</th><th>Détails</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString('fr-FR')}</td><td>${esc(x.actor_email||'Système')}</td><td><b>${esc(x.action)}</b></td><td>${esc(x.target_type||'—')} ${x.target_id?'#'+esc(x.target_id):''}</td><td><small>${esc((x.metadata||'').slice(0,220))}</small></td></tr>`).join('')||'<tr><td colspan="5">Aucune activité.</td></tr>'}</tbody></table></div></div>`;
   };
   $('#auditFilter').onclick=draw;$('#auditSearch').oninput=draw;$('#auditAction').onchange=draw;draw();
-}
-
-async function renderAdminLogs(){
-  const d=await api('/api/admin/audit-logs');
-  $('#viewContent').innerHTML=`<div class="module-hero"><div><span class="section-kicker">SÉCURITÉ</span><h2>Journal d’activité</h2><p>Consultez les dernières actions sensibles enregistrées côté serveur.</p></div></div><div class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Acteur</th><th>Action</th><th>Cible</th><th>Détails</th></tr></thead><tbody>${d.logs.map(x=>`<tr><td>${new Date(x.created_at).toLocaleString('fr-FR')}</td><td>${esc(x.actor_email||'Système')}</td><td><b>${esc(x.action)}</b></td><td>${esc(x.target_type||'—')} #${esc(x.target_id||'')}</td><td><small>${esc((x.metadata||'').slice(0,180))}</small></td></tr>`).join('')||'<tr><td colspan="5">Aucune activité enregistrée.</td></tr>'}</tbody></table></div></div>`;
 }
 
 async function renderAdmin(){
@@ -1128,10 +1139,9 @@ if(mobileMenuBtn){mobileMenuBtn.onclick=()=>{const nav=$('#publicNav');const ope
 $$('[data-search]').forEach(b=>b.onclick=()=>{const input=$('#homeSearch');if(input)input.value=b.dataset.search||b.textContent.trim();input?.focus();});
 $('#homeSearchBtn').onclick=()=>{
   const q=$('#homeSearch')?.value?.trim()||'',city=$('#homeLocation')?.value?.trim()||'';
-  openPublicPage('jobs');
   if($('#jobsSearchQ'))$('#jobsSearchQ').value=q;
   if($('#jobsSearchCity'))$('#jobsSearchCity').value=city;
-  loadPublicJobs(1);
+  openPublicPage('jobs');
 };
 boot();
 
@@ -1147,6 +1157,7 @@ function openPublicPage(page){
     a.classList.toggle('active',p===page);
   });
   buildConnectedTopNav();
+  closeAccountMenu();
   history.replaceState(null,'',`#${page}`);
   window.scrollTo({top:0,behavior:'smooth'});
   if(page==='jobs')loadPublicJobs(1);
@@ -1169,6 +1180,14 @@ document.querySelector('#publicNav a[href="#home"]')?.addEventListener('click',e
 document.getElementById('contactLoginBtn')?.addEventListener('click',loginModal);
 bindPasswordToggles();bindHomePrimaryActions();
 
+function directoryError(title,err){
+  const ref=err?.reference?`<div class="error-reference">Référence : <code>${esc(err.reference)}</code></div>`:'';
+  return `<div class="panel error-panel professional-error"><div><h3>${esc(title)}</h3><p>${esc(err?.message||'Erreur inconnue')}</p>${ref}<div class="error-actions"><button class="btn primary directory-retry" type="button">Réessayer</button><button class="btn outline-blue directory-home" type="button">Retour à l’accueil</button></div></div></div>`;
+}
+function bindDirectoryRetry(root,retry){
+  root?.querySelector('.directory-retry')?.addEventListener('click',retry);
+  root?.querySelector('.directory-home')?.addEventListener('click',()=>showPublicHome('home'));
+}
 function roleNow(){return state.session?.user?.role||null}
 function requirePaidCandidateAction(callback){
   if(!state.session){registerModal('candidate');return false}
@@ -1187,7 +1206,7 @@ function requirePaidRecruiterAction(callback){
 
 function hasActivePaidPlan(){
   const s=state.session?.subscription;
-  return !!(s && s.effective_status==='active' && (s.plan==='standard'||s.plan==='business'));
+  return !!(s && s.effective_status==='active' && (s.plan==='standard'||s.plan==='business') && (!s.expires_at || new Date(s.expires_at).getTime()>Date.now()));
 }
 function formatDateFR(v){if(!v)return '—';try{return new Date(v).toLocaleDateString('fr-FR')}catch{return String(v)}}
 function publicActionForJob(jobId){
@@ -1213,26 +1232,37 @@ function publicActionForCandidate(candidateId){
 async function loadPublicJobs(page=1){
   const grid=$('#publicJobsGrid');if(!grid)return;
   const q=$('#jobsSearchQ')?.value?.trim()||'',city=$('#jobsSearchCity')?.value?.trim()||'';
+  const contract=$('#jobsSearchContract')?.value||'',category=$('#jobsSearchCategory')?.value?.trim()||'',days=$('#jobsSearchDays')?.value||'0';
   grid.innerHTML='<div class="directory-skeleton"><span></span><span></span><span></span></div>';
   $('#publicJobsPagination').innerHTML='';
   try{
-    const d=await api(`/api/jobs?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}&page=${page}&per_page=12`);
+    const qs=new URLSearchParams({q,city,contract,category,days,page:String(page),per_page:'12'});
+    const d=await api(`/api/jobs?${qs}`);
     const pg=d.pagination||{page:1,pages:1,total:d.jobs.length};
     $('#publicJobsCount').textContent=`${formatCount(pg.total)} offre${pg.total>1?'s':''} disponible${pg.total>1?'s':''} • Page ${pg.page}/${pg.pages}`;
     grid.innerHTML=d.jobs.length?d.jobs.map(j=>`
       <article class="offer-card job-market-card clickable-card" data-job="${j.id}" tabindex="0">
-        <div class="offer-top"><div class="company-logo">${esc((j.company_name||'GE').slice(0,2).toUpperCase())}</div><span class="offer-badge new">${esc((j.plan||'standard').toUpperCase())}</span></div>
+        <div class="offer-top"><div class="company-logo">${j.logo?`<img src="${esc(j.logo)}" alt="">`:esc((j.company_name||'GE').slice(0,2).toUpperCase())}</div><span class="offer-badge new">${esc((j.plan||'standard').toUpperCase())}</span></div>
         <h3>${esc(j.title)}</h3><p class="company">${esc(j.company_name||'Recruteur GLOBAL EMPLOI')}</p>
         <div class="offer-meta"><span>⌖ ${esc(j.location||'Lieu non précisé')}</span><span>▣ ${esc(j.employment_type||'Type non précisé')}</span></div>
         <p class="card-summary">${esc((j.description||'').slice(0,160))}${(j.description||'').length>160?'…':''}</p>
-        <div class="offer-footer"><small>Publié le ${formatDateFR(j.created_at)}</small><span>Voir le détail →</span></div>
+        <div class="offer-footer"><small>Publié le ${formatDateFR(j.created_at)}</small><span>${esc(j.category||j.profession||'')}</span></div>
+        <div class="card-actions"><button class="btn outline-blue public-job-detail" data-job="${j.id}">Voir l’offre</button>${publicActionForJob(j.id)}</div>
       </article>`).join(''):'<div class="panel empty-state">Aucune offre disponible ne correspond à votre recherche.</div>';
     renderDirectoryPagination('#publicJobsPagination',pg,p=>loadPublicJobs(p));
     $$('.job-market-card').forEach(card=>{
-      card.onclick=()=>openJobDetail(Number(card.dataset.job));
-      card.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openJobDetail(Number(card.dataset.job))}}
+      card.addEventListener('click',e=>{if(e.target.closest('button'))return;openJobDetail(Number(card.dataset.job))});
+      card.onkeydown=e=>{if((e.key==='Enter'||e.key===' ')&&!e.target.closest('button')){e.preventDefault();openJobDetail(Number(card.dataset.job))}}
     });
-  }catch(err){grid.innerHTML=`<div class="panel error-panel"><b>Impossible d’afficher les offres.</b><p>${esc(err.message)}</p></div>`}
+    $$('.public-job-detail').forEach(b=>b.onclick=e=>{e.stopPropagation();openJobDetail(Number(b.dataset.job))});
+    $$('.public-apply').forEach(b=>b.onclick=e=>{e.stopPropagation();requirePaidCandidateAction(()=>applyFromPublic(Number(b.dataset.job)))});
+    $$('.public-subscribe-candidate').forEach(b=>b.onclick=e=>{e.stopPropagation();navigateView('subscription')});
+    $$('.public-register-candidate').forEach(b=>b.onclick=e=>{e.stopPropagation();registerModal('candidate')});
+  }catch(err){
+    $('#publicJobsCount').textContent='';
+    grid.innerHTML=directoryError('Impossible d’afficher les offres.',err);
+    bindDirectoryRetry(grid,()=>loadPublicJobs(page));
+  }
 }
 async function openJobDetail(id){
   try{
@@ -1251,7 +1281,7 @@ async function openJobDetail(id){
       ${j.company_description?`<div class="detail-section"><h3>À propos de l’entreprise</h3><p>${esc(j.company_description)}</p></div>`:''}
       <div class="detail-actions">${publicActionForJob(j.id)}</div>
     </div>`);
-    $('.public-apply')?.addEventListener('click',()=>applyFromPublic(id));
+    $('.public-apply')?.addEventListener('click',()=>requirePaidCandidateAction(()=>applyFromPublic(id)));
     $('.public-subscribe-candidate')?.addEventListener('click',()=>{closeModal();navigateView('subscription')});
     $('.public-register-candidate')?.addEventListener('click',()=>{closeModal();registerModal('candidate')});
   }catch(err){toast(err.message)}
@@ -1260,15 +1290,20 @@ async function applyFromPublic(id){
   try{
     await api(`/api/jobs/${id}/apply`,{method:'POST',body:JSON.stringify({})});
     closeModal();toast('Votre candidature a été envoyée au recruteur.');
-  }catch(err){toast(err.message)}
+  }catch(err){
+    if(err.code==='HTTP_403'&&state.session?.user?.role==='candidate'){closeModal();navigateView('subscription')}
+    toast(err.message);
+  }
 }
 async function loadPublicCandidates(page=1){
   const grid=$('#publicCandidatesGrid');if(!grid)return;
   const q=$('#candidatesSearchQ')?.value?.trim()||'',city=$('#candidatesSearchCity')?.value?.trim()||'';
+  const experience=$('#candidatesSearchExperience')?.value?.trim()||'',education=$('#candidatesSearchEducation')?.value?.trim()||'',availability=$('#candidatesSearchAvailability')?.value?.trim()||'';
   grid.innerHTML='<div class="directory-skeleton"><span></span><span></span><span></span></div>';
   $('#publicCandidatesPagination').innerHTML='';
   try{
-    const d=await api(`/api/candidates?q=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}&page=${page}&per_page=12`);
+    const qs=new URLSearchParams({q,city,experience,education,availability,page:String(page),per_page:'12'});
+    const d=await api(`/api/candidates?${qs}`);
     const pg=d.pagination||{page:1,pages:1,total:d.candidates.length};
     $('#publicCandidatesCount').textContent=`${formatCount(pg.total)} talent${pg.total>1?'s':''} disponible${pg.total>1?'s':''} • Page ${pg.page}/${pg.pages}`;
     grid.innerHTML=d.candidates.length?d.candidates.map(c=>`
@@ -1280,17 +1315,22 @@ async function loadPublicCandidates(page=1){
           <p>⌖ ${esc(c.city||c.country||'Localisation non précisée')}</p>
           <p class="card-summary">${esc((c.skills||c.specialty||'').slice(0,140))}</p>
         </div>
-        <div class="candidate-card-footer"><span>${esc(c.availability||'Disponibilité à préciser')}</span>${publicActionForCandidate(c.id)}</div>
+        <div class="candidate-card-footer"><button class="btn outline-blue public-candidate-detail" data-candidate="${c.id}">Voir le profil</button>${publicActionForCandidate(c.id)}</div>
       </article>`).join(''):'<div class="panel empty-state">Aucun talent disponible ne correspond à votre recherche.</div>';
     renderDirectoryPagination('#publicCandidatesPagination',pg,p=>loadPublicCandidates(p));
     $$('.candidate-market-card').forEach(card=>{
       card.addEventListener('click',e=>{if(e.target.closest('button'))return;openCandidateDetail(Number(card.dataset.candidate))});
       card.onkeydown=e=>{if((e.key==='Enter'||e.key===' ')&&!e.target.closest('button')){e.preventDefault();openCandidateDetail(Number(card.dataset.candidate))}}
     });
-    $$('.public-recruit').forEach(b=>b.onclick=e=>{e.stopPropagation();recruitFromPublic(Number(b.dataset.candidate))});
+    $$('.public-candidate-detail').forEach(b=>b.onclick=e=>{e.stopPropagation();openCandidateDetail(Number(b.dataset.candidate))});
+    $$('.public-recruit').forEach(b=>b.onclick=e=>{e.stopPropagation();requirePaidRecruiterAction(()=>recruitFromPublic(Number(b.dataset.candidate)))});
     $$('.public-subscribe-recruiter').forEach(b=>b.onclick=e=>{e.stopPropagation();navigateView('subscription')});
     $$('.public-register-recruiter').forEach(b=>b.onclick=e=>{e.stopPropagation();registerModal('recruiter')});
-  }catch(err){grid.innerHTML=`<div class="panel error-panel"><b>Impossible d’afficher les talents.</b><p>${esc(err.message)}</p></div>`}
+  }catch(err){
+    $('#publicCandidatesCount').textContent='';
+    grid.innerHTML=directoryError('Impossible d’afficher les talents.',err);
+    bindDirectoryRetry(grid,()=>loadPublicCandidates(page));
+  }
 }
 function renderDirectoryPagination(selector,pg,onPage){
   const box=$(selector);if(!box)return;
@@ -1321,7 +1361,7 @@ async function openCandidateDetail(id){
       ${d.languages?.length?`<div class="detail-section"><h3>Langues</h3><p>${d.languages.map(x=>`${esc(x.language)} (${esc(x.level||'—')})`).join(' • ')}</p></div>`:''}
       <div class="detail-actions">${publicActionForCandidate(c.id)}</div>
     </div>`);
-    $('.public-recruit')?.addEventListener('click',()=>recruitFromPublic(id));
+    $('.public-recruit')?.addEventListener('click',()=>requirePaidRecruiterAction(()=>recruitFromPublic(id)));
     $('.public-subscribe-recruiter')?.addEventListener('click',()=>{closeModal();navigateView('subscription')});
     $('.public-register-recruiter')?.addEventListener('click',()=>{closeModal();registerModal('recruiter')});
   }catch(err){toast(err.message)}
@@ -1330,10 +1370,13 @@ async function recruitFromPublic(id){
   try{
     await api(`/api/candidates/${id}/recruit`,{method:'POST',body:JSON.stringify({message:'Je souhaite vous contacter pour une opportunité professionnelle.'})});
     closeModal();toast('Votre demande de recrutement a été envoyée au candidat.');
-  }catch(err){toast(err.message)}
+  }catch(err){
+    if(err.code==='HTTP_403'&&state.session?.user?.role==='recruiter'){closeModal();navigateView('subscription')}
+    toast(err.message);
+  }
 }
 $('#jobsSearchBtn')?.addEventListener('click',()=>loadPublicJobs(1));
 $('#candidatesSearchBtn')?.addEventListener('click',()=>loadPublicCandidates(1));
-['jobsSearchQ','jobsSearchCity'].forEach(id=>$('#'+id)?.addEventListener('keydown',e=>{if(e.key==='Enter')loadPublicJobs(1)}));
-['candidatesSearchQ','candidatesSearchCity'].forEach(id=>$('#'+id)?.addEventListener('keydown',e=>{if(e.key==='Enter')loadPublicCandidates(1)}));
+['jobsSearchQ','jobsSearchCity','jobsSearchCategory'].forEach(id=>$('#'+id)?.addEventListener('keydown',e=>{if(e.key==='Enter')loadPublicJobs(1)}));
+['candidatesSearchQ','candidatesSearchCity','candidatesSearchExperience','candidatesSearchEducation','candidatesSearchAvailability'].forEach(id=>$('#'+id)?.addEventListener('keydown',e=>{if(e.key==='Enter')loadPublicCandidates(1)}));
 
