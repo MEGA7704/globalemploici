@@ -198,3 +198,21 @@ Dans **Variables and Secrets**, créer `SUPER_ADMIN_RECOVERY_TOKEN` comme Secret
 - Les espaces Demandeur, Recruteur et Super Admin disposent maintenant de modules complets et dynamiques : candidatures, propositions, offres, messages, notifications, paiements, gestion des membres, activations, vérifications, rapports et journal d’audit.
 - Le Super Admin est un compte permanent : aucune date d’expiration, aucun abonnement requis et aucune suppression automatique liée aux règles FREE.
 - Les trois statistiques d’accueil ont un fond rose en dégradé et un texte blanc, et restent alimentées par les données D1 réelles.
+
+
+## V16 — Actions Super Admin complètes
+
+Les menus Super Admin sont reliés à des modules fonctionnels :
+
+- **Tableau de bord** : indicateurs D1 et accès rapides.
+- **Membres** : recherche, profil détaillé, statut, abonnement, prolongation, notification, invalidation des sessions et suppression.
+- **Activations** : onglets En attente / Activées / Rejetées / Historique, validation et rejet.
+- **Vérifications** : filtre des dossiers recruteurs, validation, retour à compléter et accès au compte.
+- **Offres** : recherche, statut, détails, recruteur, suspension/clôture/réactivation et suppression.
+- **Candidatures** : suivi global par statut sans remplacer la décision du recruteur.
+- **Rapports** : périodes 1/7/30/90/365 jours, indicateurs, impression et export CSV.
+- **Journal** : recherche et filtres des actions sensibles enregistrées côté serveur.
+- **Messages** : messagerie dédiée au support administratif, séparée des conversations privées candidat–recruteur.
+- **Paramètres** : identité/support/prix/durées enregistrés dans D1 et sécurité du Super Admin. Les Secrets Cloudflare ne sont jamais exposés.
+
+La migration `migrations/0007_admin_modules.sql` ajoute les tables `app_settings` et `support_messages`. Le Worker sait aussi les créer automatiquement si nécessaire.

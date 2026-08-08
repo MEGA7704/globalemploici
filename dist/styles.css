@@ -333,3 +333,24 @@ body{background:linear-gradient(180deg,#fff 0%,#fffafd 48%,#fff6fa 100%)}
   .module-hero,.subscription-current{align-items:flex-start;flex-direction:column}
   .reply-form{grid-template-columns:1fr}
 }
+
+/* V16 — modules administratifs complets */
+.admin-row-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:280px}
+.admin-member-modal{max-width:880px}
+.admin-member-tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0}
+.tool-card{border:1px solid #F0DCE5;border-radius:14px;padding:15px;background:#FFF9FC}
+.tool-card h3{margin-top:0}.tool-card textarea,.tool-card input{width:100%;margin-bottom:8px}
+.admin-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 17px}
+.admin-tab,.support-tab{border:1px solid #E9C2D2;background:#fff;color:#7D3152;border-radius:999px;padding:9px 14px;font-weight:800}
+.admin-tab.active,.support-tab.active{background:linear-gradient(135deg,#A91450,#D8407E);color:#fff;border-color:transparent}
+.report-actions{display:flex;gap:8px;flex-wrap:wrap}
+.report-filter{grid-template-columns:minmax(220px,.5fr) auto}
+.support-unread{border-color:#E7AFC6;background:#FFF5F9}
+.admin-settings-grid{grid-template-columns:1.3fr .7fr}
+@media(max-width:900px){.admin-member-tools,.admin-settings-grid{grid-template-columns:1fr}.admin-row-actions{min-width:0}}
+@media print{
+  .topbar,.nav-actions,.account-menu,.app-toolbar,.report-actions,.market-search{display:none!important}
+  body{background:#fff!important}
+  #app{display:block!important}
+  .panel,.dashboard-card,.dash-metric{box-shadow:none!important}
+}

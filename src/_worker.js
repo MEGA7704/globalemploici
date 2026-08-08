@@ -320,6 +320,37 @@ async function cleanupExpiredFreeAccounts(env){
     catch(err){ console.error('ACCOUNT_EXPIRY_CLEANUP_FAILED',row.id,err?.message||String(err)); }
   }
 }
+
+async function ensureAdminModuleSchema(env){
+  await env.JOB_DB.exec(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS support_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sender_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      recipient_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      subject TEXT,
+      content TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'support',
+      status TEXT NOT NULL DEFAULT 'unread',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_support_messages_recipient ON support_messages(recipient_user_id,status,created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_support_messages_sender ON support_messages(sender_user_id,created_at DESC);
+  `);
+}
+async function getAppSettings(env){
+  await ensureAdminModuleSchema(env);
+  const rows=await env.JOB_DB.prepare('SELECT key,value FROM app_settings').all();
+  const map={};
+  for(const row of (rows.results||[])) map[row.key]=row.value;
+  return map;
+}
 async function handleRegister(req,env){
   const b=await req.json().catch(()=>({})); const role=b.role==='recruiter'?'recruiter':'candidate';
   const email=safeText(b.email,190).toLowerCase(), password=String(b.password||''), phone=safeText(b.phone,40);
@@ -815,6 +846,173 @@ async function api(req,env,url){
     await env.JOB_DB.prepare('UPDATE users SET status=?,session_version=session_version+1,updated_at=? WHERE id=?').bind(status,nowISO(),id).run();
     await audit(env,s.user.id,'USER_STATUS_CHANGED','user',id,{status});
     return json({ok:true,status});
+  }
+  if(/^\/api\/admin\/users\/\d+\/detail$/.test(p)&&m==='GET'){
+    await requireAdmin(req,env);
+    const id=Number(p.split('/')[4]);
+    await ensureCandidateSchema(env); await ensureRecruiterSchema(env);
+    const user=await env.JOB_DB.prepare(`SELECT u.id,u.email,u.phone,u.role,u.status,u.created_at,u.last_login_at,
+      s.plan,s.started_at,s.expires_at,s.status subscription_status,
+      cp.first_name c_first_name,cp.last_name c_last_name,cp.profession,cp.professional_title,cp.city c_city,cp.country c_country,cp.skills,cp.availability,
+      rp.first_name r_first_name,rp.last_name r_last_name,rp.company_name,rp.job_title,rp.company_city,rp.company_country,rp.verification_status
+      FROM users u
+      LEFT JOIN subscriptions s ON s.id=(SELECT id FROM subscriptions WHERE user_id=u.id ORDER BY datetime(expires_at) DESC,id DESC LIMIT 1)
+      LEFT JOIN candidate_profiles cp ON cp.user_id=u.id
+      LEFT JOIN recruiter_profiles rp ON rp.user_id=u.id
+      WHERE u.id=?`).bind(id).first();
+    if(!user) return json({error:'Membre introuvable.'},404);
+    let publications={};
+    if(user.role==='recruiter'){
+      const [jobs,apps]=await Promise.all([
+        env.JOB_DB.prepare('SELECT COUNT(*) n FROM jobs WHERE recruiter_id=?').bind(id).first(),
+        env.JOB_DB.prepare('SELECT COUNT(*) n FROM applications a JOIN jobs j ON j.id=a.job_id WHERE j.recruiter_id=?').bind(id).first()
+      ]);
+      publications={jobs:Number(jobs?.n||0),applications:Number(apps?.n||0)};
+    }else if(user.role==='candidate'){
+      const apps=await env.JOB_DB.prepare('SELECT COUNT(*) n FROM applications WHERE candidate_id=?').bind(id).first();
+      publications={applications:Number(apps?.n||0)};
+    }
+    const subs=await env.JOB_DB.prepare('SELECT id,plan,started_at,expires_at,status,created_at FROM subscriptions WHERE user_id=? ORDER BY id DESC LIMIT 50').bind(id).all();
+    return json({user,publications,subscriptions:subs.results||[]});
+  }
+  if(/^\/api\/admin\/users\/\d+\/subscription$/.test(p)&&m==='POST'){
+    const s=await requireAdmin(req,env),id=Number(p.split('/')[4]),b=await req.json().catch(()=>({}));
+    const target=await env.JOB_DB.prepare('SELECT id,role FROM users WHERE id=?').bind(id).first();
+    if(!target) return json({error:'Membre introuvable.'},404);
+    if(target.role==='super_admin') return json({error:'Le Super Admin permanent n’utilise pas d’abonnement.'},400);
+    const plan=['free','standard','business'].includes(b.plan)?b.plan:null;
+    const days=Number(b.days||0);
+    if(!plan||days<1||days>730) return json({error:'Formule ou durée invalide.'},400);
+    await env.JOB_DB.batch([
+      env.JOB_DB.prepare("UPDATE subscriptions SET status='expired',updated_at=? WHERE user_id=? AND status='active'").bind(nowISO(),id),
+      env.JOB_DB.prepare("INSERT INTO subscriptions(user_id,plan,started_at,expires_at,status) VALUES(?,?,?,?, 'active')").bind(id,plan,nowISO(),addDays(days)),
+      env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?,'subscription','Abonnement modifié par GLOBAL EMPLOI',?)").bind(id,`Votre formule est maintenant ${plan.toUpperCase()} pour ${days} jour(s).`)
+    ]);
+    await audit(env,s.user.id,'ADMIN_SUBSCRIPTION_CHANGED','user',id,{plan,days});
+    return json({ok:true});
+  }
+  if(/^\/api\/admin\/users\/\d+\/notify$/.test(p)&&m==='POST'){
+    const s=await requireAdmin(req,env),id=Number(p.split('/')[4]),b=await req.json().catch(()=>({}));
+    const title=safeText(b.title,160),content=safeText(b.content,1800);
+    if(!title||!content) return json({error:'Titre et message obligatoires.'},400);
+    const target=await env.JOB_DB.prepare('SELECT id FROM users WHERE id=?').bind(id).first();
+    if(!target) return json({error:'Membre introuvable.'},404);
+    await env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?,'admin',?,?)").bind(id,title,content).run();
+    await audit(env,s.user.id,'ADMIN_NOTIFICATION_SENT','user',id,{title});
+    return json({ok:true});
+  }
+  if(/^\/api\/admin\/users\/\d+\/invalidate-sessions$/.test(p)&&m==='POST'){
+    const s=await requireAdmin(req,env),id=Number(p.split('/')[4]);
+    const target=await env.JOB_DB.prepare('SELECT role FROM users WHERE id=?').bind(id).first();
+    if(!target) return json({error:'Membre introuvable.'},404);
+    if(target.role==='super_admin' && id===s.user.id) return json({error:'Utilisez le changement de mot de passe pour votre propre compte.'},400);
+    await env.JOB_DB.prepare('UPDATE users SET session_version=session_version+1,updated_at=? WHERE id=?').bind(nowISO(),id).run();
+    await audit(env,s.user.id,'ADMIN_SESSIONS_INVALIDATED','user',id);
+    return json({ok:true});
+  }
+  if(p==='/api/admin/activation-history'&&m==='GET'){
+    await requireAdmin(req,env);
+    const status=safeText(url.searchParams.get('status'),30);
+    const rows=await env.JOB_DB.prepare(`SELECT sr.*,u.email,u.role,a.email admin_email
+      FROM subscription_requests sr JOIN users u ON u.id=sr.user_id
+      LEFT JOIN users a ON a.id=sr.admin_id
+      WHERE (?='' OR sr.status=?)
+      ORDER BY sr.id DESC LIMIT 500`).bind(status,status).all();
+    return json({requests:rows.results||[]});
+  }
+  if(p==='/api/admin/recruiter-verifications/all'&&m==='GET'){
+    await requireAdmin(req,env); await ensureRecruiterSchema(env);
+    const rows=await env.JOB_DB.prepare(`SELECT r.user_id,r.first_name,r.last_name,r.job_title,r.company_name,r.organization_type,r.sector,r.company_city,
+      r.verification_status,r.verification_note,r.updated_at,u.email,u.phone
+      FROM recruiter_profiles r JOIN users u ON u.id=r.user_id
+      ORDER BY CASE r.verification_status WHEN 'pending' THEN 0 WHEN 'unverified' THEN 1 ELSE 2 END,r.updated_at DESC LIMIT 500`).all();
+    return json({recruiters:rows.results||[]});
+  }
+  if(/^\/api\/admin\/jobs\/\d+\/status$/.test(p)&&m==='POST'){
+    const s=await requireAdmin(req,env),id=Number(p.split('/')[4]),b=await req.json().catch(()=>({}));
+    const status=['published','draft','suspended','closed'].includes(b.status)?b.status:null;
+    if(!status) return json({error:'Statut invalide.'},400);
+    await env.JOB_DB.prepare('UPDATE jobs SET status=?,updated_at=? WHERE id=?').bind(status,nowISO(),id).run();
+    await audit(env,s.user.id,'ADMIN_JOB_STATUS_CHANGED','job',id,{status});
+    return json({ok:true,status});
+  }
+  if(p==='/api/admin/report'&&m==='GET'){
+    await requireAdmin(req,env);
+    const days=Math.min(366,Math.max(1,Number(url.searchParams.get('days')||30)));
+    const modifier=`-${days} days`;
+    const [newUsers,newCandidates,newRecruiters,newJobs,newApps,activatedStandard,activatedBusiness,expiredPaid,pending]=await Promise.all([
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM users WHERE role!='super_admin' AND datetime(created_at)>=datetime('now',?)").bind(modifier).first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM users WHERE role='candidate' AND datetime(created_at)>=datetime('now',?)").bind(modifier).first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM users WHERE role='recruiter' AND datetime(created_at)>=datetime('now',?)").bind(modifier).first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM jobs WHERE datetime(created_at)>=datetime('now',?)").bind(modifier).first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM applications WHERE datetime(created_at)>=datetime('now',?)").bind(modifier).first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM subscriptions WHERE plan='standard' AND datetime(created_at)>=datetime('now',?)").bind(modifier).first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM subscriptions WHERE plan='business' AND datetime(created_at)>=datetime('now',?)").bind(modifier).first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM subscriptions WHERE plan IN ('standard','business') AND status='expired' AND datetime(updated_at)>=datetime('now',?)").bind(modifier).first(),
+      env.JOB_DB.prepare("SELECT COUNT(*) n FROM subscription_requests WHERE status='pending'").first()
+    ]);
+    const standard=Number(activatedStandard?.n||0),business=Number(activatedBusiness?.n||0);
+    return json({days,new_users:Number(newUsers?.n||0),new_candidates:Number(newCandidates?.n||0),new_recruiters:Number(newRecruiters?.n||0),
+      new_jobs:Number(newJobs?.n||0),new_applications:Number(newApps?.n||0),standard,business,expired_paid:Number(expiredPaid?.n||0),
+      pending_activations:Number(pending?.n||0),theoretical_revenue:standard*1000+business*10000});
+  }
+  if(p==='/api/admin/settings'&&m==='GET'){
+    await requireAdmin(req,env);
+    const settings=await getAppSettings(env);
+    return json({settings});
+  }
+  if(p==='/api/admin/settings'&&m==='POST'){
+    const s=await requireAdmin(req,env),b=await req.json().catch(()=>({}));
+    await ensureAdminModuleSchema(env);
+    const allowed=['platform_name','support_whatsapp','wave_payment_url','standard_price','business_price','free_days','standard_days','business_days','default_country','contact_email'];
+    const stmts=[];
+    for(const key of allowed){
+      if(Object.prototype.hasOwnProperty.call(b,key)){
+        const value=safeText(String(b[key]??''),800);
+        stmts.push(env.JOB_DB.prepare(`INSERT INTO app_settings(key,value,updated_at,updated_by) VALUES(?,?,?,?)
+          ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`).bind(key,value,nowISO(),s.user.id));
+      }
+    }
+    if(stmts.length) await env.JOB_DB.batch(stmts);
+    await audit(env,s.user.id,'ADMIN_SETTINGS_UPDATED','settings',null,{keys:allowed.filter(k=>Object.prototype.hasOwnProperty.call(b,k))});
+    return json({ok:true});
+  }
+  if(p==='/api/support/messages'&&m==='GET'){
+    const s=await requireSession(req,env); await ensureAdminModuleSchema(env);
+    let rows;
+    if(s.user.role==='super_admin'){
+      rows=await env.JOB_DB.prepare(`SELECT sm.*,su.email sender_email,ru.email recipient_email FROM support_messages sm
+        LEFT JOIN users su ON su.id=sm.sender_user_id LEFT JOIN users ru ON ru.id=sm.recipient_user_id
+        ORDER BY sm.id DESC LIMIT 300`).all();
+    }else{
+      rows=await env.JOB_DB.prepare(`SELECT sm.*,su.email sender_email,ru.email recipient_email FROM support_messages sm
+        LEFT JOIN users su ON su.id=sm.sender_user_id LEFT JOIN users ru ON ru.id=sm.recipient_user_id
+        WHERE sm.sender_user_id=? OR sm.recipient_user_id=? ORDER BY sm.id DESC LIMIT 150`).bind(s.user.id,s.user.id).all();
+    }
+    return json({messages:rows.results||[]});
+  }
+  if(p==='/api/support/messages'&&m==='POST'){
+    const s=await requireSession(req,env); await ensureAdminModuleSchema(env); const b=await req.json().catch(()=>({}));
+    const content=safeText(b.content,2500),subject=safeText(b.subject,180),category=safeText(b.category||'support',50);
+    if(!content) return json({error:'Message obligatoire.'},400);
+    let recipient=null;
+    if(s.user.role==='super_admin'){
+      recipient=Number(b.recipient_user_id)||null;
+      if(!recipient) return json({error:'Destinataire obligatoire.'},400);
+    }
+    await env.JOB_DB.prepare('INSERT INTO support_messages(sender_user_id,recipient_user_id,subject,content,category,status) VALUES(?,?,?,?,?,?)')
+      .bind(s.user.id,recipient,subject,content,category,'unread').run();
+    if(recipient) await env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?,'support','Message du support GLOBAL EMPLOI',?)").bind(recipient,content.slice(0,600)).run();
+    return json({ok:true});
+  }
+  if(/^\/api\/support\/messages\/\d+\/status$/.test(p)&&m==='POST'){
+    const s=await requireSession(req,env); await ensureAdminModuleSchema(env);
+    const id=Number(p.split('/')[4]),b=await req.json().catch(()=>({}));
+    const status=['unread','read','archived'].includes(b.status)?b.status:null;
+    if(!status) return json({error:'Statut invalide.'},400);
+    if(s.user.role==='super_admin') await env.JOB_DB.prepare('UPDATE support_messages SET status=?,updated_at=? WHERE id=?').bind(status,nowISO(),id).run();
+    else await env.JOB_DB.prepare('UPDATE support_messages SET status=?,updated_at=? WHERE id=? AND (sender_user_id=? OR recipient_user_id=?)').bind(status,nowISO(),id,s.user.id,s.user.id).run();
+    return json({ok:true});
   }
   if(p==='/api/admin/users'&&m==='GET'){ await requireAdmin(req,env); const rows=await env.JOB_DB.prepare(`SELECT u.id,u.email,u.phone,u.role,u.status,u.created_at,s.plan,s.expires_at FROM users u LEFT JOIN subscriptions s ON s.id=(SELECT id FROM subscriptions WHERE user_id=u.id ORDER BY datetime(expires_at) DESC LIMIT 1) ORDER BY u.id DESC LIMIT 500`).all(); return json({users:rows.results}); }
   return json({error:'Route API introuvable.'},404);
