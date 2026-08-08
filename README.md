@@ -316,3 +316,11 @@ Le Worker V22 garde néanmoins une logique d'auto-réparation des modules Admin 
 - Toute URL publique contenant `email`, `password`, `recovery_token` ou `token` est immédiatement redirigée vers une URL nettoyée.
 - La page applique `Referrer-Policy: no-referrer`, `Cache-Control: no-store` pour HTML/API et des en-têtes de durcissement supplémentaires.
 - Après exposition accidentelle d'un mot de passe, changer le Secret Cloudflare correspondant puis utiliser la procédure de récupération Super Admin afin de mettre à jour le hash D1 et invalider les anciennes sessions.
+
+
+## V25 - Correction erreur serveur au démarrage
+- Les réparations D1 optionnelles sont tolérantes aux erreurs et ne bloquent plus `/api/session`.
+- La maintenance des abonnements FREE est best-effort et ne peut plus provoquer une panne générale.
+- Les API de données ne dépendent plus du binding `ASSETS`; il est vérifié uniquement pour les fichiers statiques.
+- La lecture d'abonnement ne peut plus invalider une session si la table d'abonnement rencontre un incident temporaire.
+- Les erreurs frontend affichent désormais le code serveur en plus de la référence Cloudflare.

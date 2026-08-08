@@ -259,8 +259,9 @@ async function boot(){
     showGuest();
     // Une absence de session est normale. Une erreur serveur ne doit plus être masquée comme une simple déconnexion.
     if(err?.code && err.code!=='HTTP_401'){
+      const code=err.code?` • Code ${err.code}`:'';
       const ref=err.reference?` • Réf. ${err.reference}`:'';
-      toast(`Connexion aux données impossible : ${err.message}${ref}`);
+      toast(`Connexion aux données impossible : ${err.message}${code}${ref}`);
     }
   }
 }

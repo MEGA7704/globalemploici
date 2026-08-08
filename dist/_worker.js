@@ -19,14 +19,23 @@ function serverError(code, message, status=500){
 }
 
 function assertBindings(env){
+  // Les API de données ne doivent dépendre que de D1 et KV.
+  // ASSETS est vérifié séparément uniquement pour le rendu des fichiers statiques.
   const missing=[];
   if(!env.JOB_DB) missing.push('JOB_DB');
   if(!env.JOB_KV) missing.push('JOB_KV');
-  if(!env.ASSETS) missing.push('ASSETS');
   if(missing.length){
     const e=new Error(`Missing bindings: ${missing.join(', ')}`);
     e.code='BINDING_MISSING';
     e.publicMessage=`Configuration Cloudflare incomplète : binding ${missing.join(', ')} manquant.`;
+    throw e;
+  }
+}
+function assertAssetsBinding(env){
+  if(!env.ASSETS){
+    const e=new Error('Missing binding: ASSETS');
+    e.code='ASSETS_BINDING_MISSING';
+    e.publicMessage='Le binding ASSETS de Cloudflare Pages est indisponible.';
     throw e;
   }
 }
@@ -154,15 +163,36 @@ async function ensureBaseColumns(env){
 async function ensureRuntimeSchema(env){
   if(!runtimeSchemaReadyPromise){
     runtimeSchemaReadyPromise=(async()=>{
-      await ensureCoreSchema(env);
-      await ensureBaseColumns(env);
-      await ensureCandidateSchema(env);
-      await ensureRecruiterSchema(env);
-      await ensureRecruitmentSchema(env);
-      await ensureRecruiterProSchema(env);
-      await ensureAdminModuleSchema(env);
-      await checkDatabase(env);
-      return true;
+      const errors=[];
+      const step=async(name,fn)=>{
+        try{ await fn(); }
+        catch(err){
+          errors.push({name,message:err?.message||String(err)});
+          console.error('GLOBAL_EMPLOI_SCHEMA_REPAIR_STEP_FAILED',{step:name,message:err?.message||String(err),cause:err?.cause?.message||null});
+        }
+      };
+
+      // IMPORTANT V25 : aucune réparation optionnelle ne doit bloquer /api/session.
+      // On tente chaque étape indépendamment, puis on vérifie seulement que D1 et la table users sont lisibles.
+      await step('core',()=>ensureCoreSchema(env));
+      await step('base_columns',()=>ensureBaseColumns(env));
+      await step('candidate',()=>ensureCandidateSchema(env));
+      await step('recruiter',()=>ensureRecruiterSchema(env));
+      await step('recruitment',()=>ensureRecruitmentSchema(env));
+      await step('recruiter_pro',()=>ensureRecruiterProSchema(env));
+      await step('admin_modules',()=>ensureAdminModuleSchema(env));
+
+      try{
+        await env.JOB_DB.prepare('SELECT id FROM users LIMIT 1').first();
+      }catch(err){
+        const e=new Error(`D1 core unavailable: ${err?.message||err}`);
+        e.code='D1_CORE_UNAVAILABLE';
+        e.publicMessage='La table principale des comptes est inaccessible dans D1.';
+        throw e;
+      }
+
+      if(errors.length) console.warn('GLOBAL_EMPLOI_SCHEMA_REPAIR_DEGRADED',{errors});
+      return {ok:true,degraded:errors.length>0,errors};
     })();
     runtimeSchemaReadyPromise.catch(()=>{ runtimeSchemaReadyPromise=null; });
   }
@@ -200,16 +230,21 @@ async function audit(env,actor,action,targetType=null,targetId=null,meta=null){
   try{await env.JOB_DB.prepare('INSERT INTO audit_logs(actor_user_id,action,target_type,target_id,metadata) VALUES(?,?,?,?,?)').bind(actor||null,action,targetType,targetId?String(targetId):null,meta?JSON.stringify(meta):null).run();}catch{}
 }
 async function currentSubscription(env,userId){
-  // Priorité absolue à un abonnement payant actif. Une ligne FREE permanente ne doit jamais masquer STANDARD/BUSINESS.
-  const s=await env.JOB_DB.prepare(`SELECT * FROM subscriptions WHERE user_id=?
-    ORDER BY CASE
-      WHEN status='active' AND plan IN ('standard','business') AND datetime(expires_at)>datetime('now') THEN 0
-      WHEN status='active' AND plan='free' THEN 1
-      ELSE 2 END,
-      id DESC LIMIT 1`).bind(userId).first();
-  if(!s) return null;
-  const active=s.status==='active' && (s.plan==='free' || new Date(s.expires_at)>new Date());
-  return {...s, effective_status:active?'active':'expired'};
+  // Une panne de la table d'abonnement ne doit jamais invalider une session utilisateur valide.
+  try{
+    const s=await env.JOB_DB.prepare(`SELECT * FROM subscriptions WHERE user_id=?
+      ORDER BY CASE
+        WHEN status='active' AND plan IN ('standard','business') AND datetime(expires_at)>datetime('now') THEN 0
+        WHEN status='active' AND plan='free' THEN 1
+        ELSE 2 END,
+        id DESC LIMIT 1`).bind(userId).first();
+    if(!s) return null;
+    const active=s.status==='active' && (s.plan==='free' || new Date(s.expires_at)>new Date());
+    return {...s, effective_status:active?'active':'expired'};
+  }catch(err){
+    console.error('GLOBAL_EMPLOI_SUBSCRIPTION_READ_FAILED',{userId,message:err?.message||String(err),cause:err?.cause?.message||null});
+    return null;
+  }
 }
 
 
@@ -435,11 +470,17 @@ async function ensureAdminModuleSchema(env){
   `);
 }
 async function ensureAdminDataReady(env){
-  // Répare automatiquement les modules nécessaires aux pages Admin, même sur une ancienne base D1.
-  await ensureRecruiterSchema(env);
-  await ensureRecruitmentSchema(env);
-  await ensureAdminModuleSchema(env);
-  await ensureRecruiterProSchema(env);
+  // V25 : une étape de réparation optionnelle ne doit pas masquer toutes les autres pages Admin.
+  const steps=[
+    ['recruiter',ensureRecruiterSchema],
+    ['recruitment',ensureRecruitmentSchema],
+    ['admin_modules',ensureAdminModuleSchema],
+    ['recruiter_pro',ensureRecruiterProSchema]
+  ];
+  for(const [name,fn] of steps){
+    try{ await fn(env); }
+    catch(err){ console.error('GLOBAL_EMPLOI_ADMIN_SCHEMA_STEP_FAILED',{step:name,message:err?.message||String(err),cause:err?.cause?.message||null}); }
+  }
 }
 async function getAppSettings(env){
   await ensureAdminModuleSchema(env);
@@ -1375,10 +1416,13 @@ export default {
       }
 
       if(url.pathname.startsWith('/api/')){
-        // V24 : la base est initialisée/réparée AVANT toute vérification ou lecture de session.
-        // Ainsi une table manquante ne bloque plus /api/session ni les pages Admin/Recruteur/Demandeur.
+        // V25 : réparation tolérante. Une table/module optionnel en défaut ne doit plus bloquer la session.
         await ensureRuntimeSchema(env);
-        await cleanupExpiredFreeAccounts(env);
+        try{ await cleanupExpiredFreeAccounts(env); }
+        catch(err){
+          console.error('GLOBAL_EMPLOI_MAINTENANCE_FAILED',{message:err?.message||String(err),cause:err?.cause?.message||null});
+          // Ne jamais transformer une maintenance d'abonnement en panne générale du site.
+        }
         const response=await api(request,env,url);
         const h=new Headers(response.headers);
         h.set('cache-control','no-store');
@@ -1387,6 +1431,7 @@ export default {
         h.set('x-frame-options','DENY');
         return new Response(response.body,{status:response.status,statusText:response.statusText,headers:h});
       }
+      assertAssetsBinding(env);
       const asset=await env.ASSETS.fetch(request);
       const h=new Headers(asset.headers);
       h.set('referrer-policy','no-referrer');
@@ -1398,7 +1443,7 @@ export default {
     } catch(err){
       if(err instanceof Response) return err;
       const requestId=request.headers.get('cf-ray')||crypto.randomUUID();
-      console.error('GLOBAL_EMPLOI_SERVER_ERROR',{requestId,code:err?.code||'SERVER_ERROR',message:err?.message||String(err),stack:err?.stack});
+      console.error('GLOBAL_EMPLOI_SERVER_ERROR',{requestId,code:err?.code||'SERVER_ERROR',message:err?.message||String(err),cause:err?.cause?.message||null,stack:err?.stack});
       const code=err?.code||'SERVER_ERROR';
       const message=err?.publicMessage||'Erreur serveur. Consultez les journaux Cloudflare avec la référence indiquée.';
       return json({error:message,code,reference:requestId},500);
