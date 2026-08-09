@@ -33,8 +33,23 @@ const api=async(path,options={})=>{
   }finally{clearTimeout(timer);}
 };
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.remove('hidden');setTimeout(()=>t.classList.add('hidden'),3200)}
+let professionalConfirmResolve=null;
 function modal(html){$('#modalBody').innerHTML=html;$('#modal').classList.remove('hidden')}
-function closeModal(){$('#modal').classList.add('hidden')}
+function closeModal(){
+  $('#modal').classList.add('hidden');
+  if(professionalConfirmResolve){const resolve=professionalConfirmResolve;professionalConfirmResolve=null;resolve(false)}
+}
+function professionalConfirm({title='Confirmer cette action',message='',note='',confirmLabel='Confirmer',cancelLabel='Annuler',tone='warning',eyebrow='CONFIRMATION'}={}){
+  if(professionalConfirmResolve){professionalConfirmResolve(false);professionalConfirmResolve=null}
+  return new Promise(resolve=>{
+    professionalConfirmResolve=resolve;
+    const icon=tone==='danger'?'!':tone==='success'?'✓':'?';
+    modal(`<div class="professional-confirm ${esc(tone)}"><div class="professional-confirm-icon">${icon}</div><span class="section-kicker">${esc(eyebrow)}</span><h2>${esc(title)}</h2><p>${esc(message)}</p>${note?`<div class="professional-confirm-note">${esc(note)}</div>`:''}<div class="professional-confirm-actions"><button id="professionalConfirmCancel" type="button" class="btn outline-blue">${esc(cancelLabel)}</button><button id="professionalConfirmOk" type="button" class="btn ${tone==='danger'?'danger confirm-danger':'primary'}">${esc(confirmLabel)}</button></div></div>`);
+    const finish=value=>{const r=professionalConfirmResolve;professionalConfirmResolve=null;$('#modal').classList.add('hidden');if(r)r(value)};
+    $('#professionalConfirmCancel').onclick=()=>finish(false);
+    $('#professionalConfirmOk').onclick=()=>finish(true);
+  });
+}
 $('#closeModal').onclick=closeModal;$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
 
 // V28 — utilitaire central d'échappement HTML. La V27 l'appelait partout sans le définir,
@@ -873,8 +888,12 @@ async function renderMyApplications(){
     <div class="market-search candidate-app-filter"><div class="field"><label>Recherche</label><input id="candidateAppQ" placeholder="Entreprise ou poste…"></div><div class="field"><label>Statut</label><select id="candidateAppStatus"><option value="">Tous</option><option value="submitted">Envoyées</option><option value="reviewing">À l’étude</option><option value="shortlisted">Présélectionnées</option><option value="interview">Entretien</option><option value="accepted">Acceptées</option><option value="rejected">Refusées</option><option value="cancelled">Annulées</option></select></div><button id="candidateAppFilterBtn" class="btn primary">Filtrer</button></div>
     <div id="candidateAppList"></div>`;
   const act=async(id,action,label)=>{
-    const questions={cancel:'Annuler cette candidature ? Elle pourra ensuite être réactivée ou retirée.',reactivate:'Réactiver cette candidature et la remettre au statut Envoyée ?',withdraw:'Retirer cette candidature ? Elle disparaîtra de votre compte et de la liste du recruteur.'};
-    if(!confirm(questions[action]||'Confirmer cette action ?'))return;
+    const dialogs={
+      cancel:{title:'Annuler cette candidature ?',message:'La candidature passera au statut « Annulée » et le recruteur en sera informé.',note:'Vous pourrez ensuite la réactiver ou la retirer de vos espaces.',confirmLabel:'Annuler la candidature',tone:'warning'},
+      reactivate:{title:'Réactiver cette candidature ?',message:'La candidature sera remise au statut « Envoyée » et redeviendra active auprès du recruteur.',note:'Le recruteur recevra une nouvelle notification.',confirmLabel:'Réactiver',tone:'success'},
+      withdraw:{title:'Retirer cette candidature ?',message:'Elle disparaîtra de votre compte et de la liste opérationnelle du recruteur.',note:'La trace administrative reste conservée. Vous pourrez postuler de nouveau à cette même offre plus tard.',confirmLabel:'Retirer',tone:'danger'}
+    };
+    if(!await professionalConfirm(dialogs[action]||{}))return;
     try{await api(`/api/candidate/applications/${id}/action`,{method:'POST',body:JSON.stringify({action})});toast(label);renderMyApplications()}catch(err){toast(err.message)}
   };
   const draw=()=>{
@@ -906,7 +925,7 @@ async function renderRecruitmentRequests(){
     </article>`).join('')||'<div class="panel empty-state">Aucune proposition reçue pour le moment.</div>'}</div>`;
   $$('.message-user').forEach(b=>b.onclick=()=>messageModal(Number(b.dataset.id)));
   $$('.rr-action').forEach(b=>b.onclick=async()=>{try{await api(`/api/candidate/recruitment-requests/${b.dataset.id}/status`,{method:'POST',body:JSON.stringify({status:b.dataset.status})});toast('Votre réponse a été enregistrée.');renderRecruitmentRequests()}catch(err){toast(err.message)}});
-  $$('.rr-delete').forEach(b=>b.onclick=async()=>{if(!confirm('Supprimer cette proposition de votre espace ? La copie administrative restera conservée.'))return;try{await api(`/api/candidate/recruitment-requests/${b.dataset.id}`,{method:'DELETE'});toast('Proposition supprimée de votre espace.');renderRecruitmentRequests()}catch(err){toast(err.message)}});
+  $$('.rr-delete').forEach(b=>b.onclick=async()=>{if(!await professionalConfirm({title:'Supprimer cette proposition ?',message:'La proposition sera masquée uniquement dans votre espace Demandeur.',note:'La copie administrative et la copie du recruteur restent conservées.',confirmLabel:'Supprimer de mon espace',tone:'danger'}))return;try{await api(`/api/candidate/recruitment-requests/${b.dataset.id}`,{method:'DELETE'});toast('Proposition supprimée de votre espace.');renderRecruitmentRequests()}catch(err){toast(err.message)}});
 }
 
 async function renderCandidates(){
@@ -921,7 +940,7 @@ async function renderCandidates(){
       <div class="field"><label>Disponibilité</label><input id="memberCandAvail" placeholder="Immédiatement…"></div>
       <button id="memberCandSearch" class="btn primary">Rechercher</button>
     </div>
-    <div id="memberCandCount" class="results-count"></div><div id="memberCandGrid" class="candidate-market-grid"><div class="page-skeleton compact"><span></span><span></span></div></div><div id="memberCandPagination" class="public-pagination"></div>`;
+    <div id="memberCandCount" class="results-count"></div><div id="memberCandGrid" class="candidate-market-grid"><div class="page-skeleton compact"><span></span><span></span></div></div><div id="memberCandPagination" class="public-pagination"></div>${role==='recruiter'?'<div id="sentRecruitmentRequests" class="sent-recruitment-section"></div>':''}`;
   const load=async(page=1)=>{
     try{
       const qs=new URLSearchParams({q:$('#memberCandQ').value.trim(),city:$('#memberCandCity').value.trim(),experience:$('#memberCandExp').value.trim(),education:$('#memberCandEdu').value.trim(),availability:$('#memberCandAvail').value.trim(),page:String(page),per_page:'12'});
@@ -933,7 +952,15 @@ async function renderCandidates(){
       renderDirectoryPagination('#memberCandPagination',pg,p=>load(p));
     }catch(err){$('#memberCandCount').textContent='';const grid=$('#memberCandGrid');grid.innerHTML=directoryError('Impossible de charger les talents.',err,()=>load(page));bindDirectoryRetry(grid,()=>load(page))}
   };
-  $('#memberCandSearch').onclick=()=>load(1);await load(1);
+  const loadSentProposals=async()=>{
+    if(role!=='recruiter'||!$('#sentRecruitmentRequests'))return;
+    try{
+      const d=await api('/api/recruiter/recruitment-requests');
+      $('#sentRecruitmentRequests').innerHTML=`<div class="section-head compact-head"><div><span class="section-kicker">PROPOSITIONS ENVOYÉES</span><h2>Mes propositions de recrutement</h2><p>Vous pouvez retirer une proposition de votre espace sans supprimer la copie du candidat ni celle du Super Admin.</p></div></div><div class="application-cards">${d.requests.map(r=>`<article class="application-card"><div class="card-topline"><span class="pill status-${esc(r.status)}">${esc(r.status||'sent')}</span><small>${new Date(r.updated_at||r.created_at).toLocaleString('fr-FR')}</small></div><h3>${esc(((r.first_name||'')+' '+(r.last_name||'')).trim()||r.email||'Candidat')}</h3><p>${esc(r.professional_title||r.profession||'Profil professionnel')}</p>${r.message?`<div class="application-message">${esc(r.message)}</div>`:''}<div class="application-actions"><button type="button" class="btn danger sent-proposal-delete" data-id="${r.id}">Supprimer de mon espace</button></div></article>`).join('')||'<div class="panel empty-state">Aucune proposition envoyée actuellement.</div>'}</div>`;
+      $$('.sent-proposal-delete').forEach(b=>b.onclick=async()=>{if(!await professionalConfirm({title:'Supprimer cette proposition envoyée ?',message:'La proposition sera masquée uniquement dans votre espace Recruteur.',note:'Le candidat et le Super Admin conservent leur copie. Vous pourrez envoyer une nouvelle proposition plus tard.',confirmLabel:'Supprimer de mon espace',tone:'danger'}))return;try{await api(`/api/recruiter/recruitment-requests/${b.dataset.id}`,{method:'DELETE'});toast('Proposition supprimée de votre espace.');loadSentProposals()}catch(err){toast(err.message)}});
+    }catch(err){$('#sentRecruitmentRequests').innerHTML=`<div class="panel error-panel"><h3>Impossible de charger les propositions envoyées.</h3><p>${esc(err.message)}</p></div>`}
+  };
+  $('#memberCandSearch').onclick=()=>load(1);await load(1);await loadSentProposals();
 }
 function messageModal(receiver){modal(`<h2>Envoyer un message</h2><form id="messageForm"><div class="field"><label>Message</label><textarea name="content" required></textarea></div><br><button class="btn primary">Envoyer</button></form>`);$('#messageForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/messages',{method:'POST',body:JSON.stringify({receiver_id:receiver,content:new FormData(e.target).get('content')})});closeModal();toast('Message envoyé')}catch(err){toast(err.message)}}}
 async function renderMessages(){
@@ -967,10 +994,11 @@ async function renderMessages(){
   }
   const d=await api('/api/conversations');
   $('#viewContent').innerHTML=`
-    <div class="module-hero"><div><span class="section-kicker">MESSAGERIE</span><h2>Mes conversations</h2><p>Échangez directement avec vos correspondants professionnels. Les messages reçus peuvent être masqués uniquement de votre espace.</p></div><button id="contactSupportFromMessages" class="btn outline-blue">Contacter le support</button></div>
-    <div class="conversation-list">${d.conversations.map(x=>`<button class="conversation-row open-conv" data-id="${x.id}" data-other="${x.other_user_id||''}"><div class="conversation-avatar">${esc((x.other_name||x.other_email||'GE').slice(0,2).toUpperCase())}</div><div class="conversation-copy"><strong>${esc(x.other_name||x.other_email||'Correspondant')}</strong><small>${esc(x.other_role||'')}</small><p>${esc(x.last_message||'Aucun message')}</p></div><span>→</span></button>`).join('')||'<div class="panel empty-state">Aucune conversation pour le moment.</div>'}</div>`;
+    <div class="module-hero"><div><span class="section-kicker">MESSAGERIE</span><h2>Mes conversations</h2><p>Échangez directement avec vos correspondants professionnels. Vous pouvez masquer vos conversations et vos messages envoyés ou reçus sans supprimer la copie administrative.</p></div><button id="contactSupportFromMessages" class="btn outline-blue">Contacter le support</button></div>
+    <div class="conversation-list">${d.conversations.map(x=>`<div class="conversation-row-wrap"><button class="conversation-row open-conv" data-id="${x.id}" data-other="${x.other_user_id||''}"><div class="conversation-avatar">${esc((x.other_name||x.other_email||'GE').slice(0,2).toUpperCase())}</div><div class="conversation-copy"><strong>${esc(x.other_name||x.other_email||'Correspondant')}</strong><small>${esc(x.other_role||'')}</small><p>${esc(x.last_message||'Aucun message')}</p></div><span>→</span></button><button type="button" class="conversation-delete-client" data-id="${x.id}">Supprimer</button></div>`).join('')||'<div class="panel empty-state">Aucune conversation pour le moment.</div>'}</div>`;
   $('#contactSupportFromMessages')?.addEventListener('click',()=>openMemberSupportModal());
   $$('.open-conv').forEach(b=>b.onclick=()=>openConversationModal(Number(b.dataset.id),Number(b.dataset.other)));
+  $$('.conversation-delete-client').forEach(b=>b.onclick=async()=>{if(!await professionalConfirm({title:'Supprimer cette conversation ?',message:'La conversation sera masquée uniquement dans votre espace.',note:'Les messages originaux restent conservés pour l’autre membre et le Super Admin. Un nouveau message fera réapparaître la conversation.',confirmLabel:'Supprimer de mon espace',tone:'danger'}))return;try{await api(`/api/conversations/${b.dataset.id}`,{method:'DELETE'});toast('Conversation supprimée de votre espace.');renderMessages()}catch(err){toast(err.message)}});
 }
 function supportCompose(preselected,members){
   modal(`<h2>Message support</h2><form id="supportComposeForm" class="form-grid"><div class="field full"><label>Destinataire</label><select name="recipient_user_id" required><option value="">Choisir un membre</option>${members.map(x=>`<option value="${x.id}" ${Number(preselected)===Number(x.id)?'selected':''}>${esc(x.email)} — ${x.role==='candidate'?'Demandeur':'Recruteur'}</option>`).join('')}</select></div><div class="field"><label>Catégorie</label><select name="category"><option value="support">Support</option><option value="subscription">Abonnement</option><option value="verification">Vérification</option><option value="account">Compte</option></select></div><div class="field"><label>Objet</label><input name="subject" required></div><div class="field full"><label>Message</label><textarea name="content" rows="6" required></textarea></div><div class="full"><button class="btn primary">Envoyer</button></div></form>`);
@@ -986,8 +1014,8 @@ function openMemberSupportModal(defaultCategory='support'){
 async function openConversationModal(conversationId,receiver){
   try{
     const m=await api(`/api/messages?conversation_id=${conversationId}`);
-    modal(`<div class="conversation-modal"><h2>Conversation</h2><div class="message-thread">${m.messages.map(x=>{const mine=Number(x.sender_id)===Number(state.session.user.id);return `<div class="chat-message ${mine?'mine':'theirs'}"><div><small>${mine?'Moi':'Correspondant'} • ${new Date(x.created_at).toLocaleString('fr-FR')}</small><p>${esc(x.content)}</p></div>${!mine?`<button type="button" class="message-delete-client" data-id="${x.id}" title="Supprimer de mon espace">Supprimer</button>`:''}</div>`}).join('')||'<div class="empty-state">Aucun message visible.</div>'}</div>${receiver?`<form id="replyForm" class="reply-form"><textarea name="content" placeholder="Écrire un message…" required></textarea><button class="btn primary">Envoyer</button></form>`:''}</div>`);
-    $$('.message-delete-client').forEach(b=>b.onclick=async()=>{if(!confirm('Supprimer ce message reçu de votre espace ? La copie administrative et celle de l’expéditeur ne seront pas supprimées.'))return;try{await api(`/api/messages/${b.dataset.id}`,{method:'DELETE'});toast('Message supprimé de votre espace.');openConversationModal(conversationId,receiver)}catch(err){toast(err.message)}});
+    modal(`<div class="conversation-modal"><h2>Conversation</h2><div class="message-thread">${m.messages.map(x=>{const mine=Number(x.sender_id)===Number(state.session.user.id);return `<div class="chat-message ${mine?'mine':'theirs'}"><div><small>${mine?'Moi':'Correspondant'} • ${new Date(x.created_at).toLocaleString('fr-FR')}</small><p>${esc(x.content)}</p></div><button type="button" class="message-delete-client" data-id="${x.id}" title="Supprimer de mon espace">Supprimer</button></div>`}).join('')||'<div class="empty-state">Aucun message visible.</div>'}</div>${receiver?`<form id="replyForm" class="reply-form"><textarea name="content" placeholder="Écrire un message…" required></textarea><button class="btn primary">Envoyer</button></form>`:''}</div>`);
+    $$('.message-delete-client').forEach(b=>b.onclick=async()=>{if(!await professionalConfirm({title:'Supprimer ce message ?',message:'Ce message sera masqué uniquement dans votre espace, qu’il ait été envoyé ou reçu.',note:'La copie de l’autre membre et la copie administrative restent conservées.',confirmLabel:'Supprimer de mon espace',tone:'danger'}))return;try{await api(`/api/messages/${b.dataset.id}`,{method:'DELETE'});toast('Message supprimé de votre espace.');openConversationModal(conversationId,receiver)}catch(err){toast(err.message)}});
     if(receiver)$('#replyForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/messages',{method:'POST',body:JSON.stringify({receiver_id:receiver,content:new FormData(e.target).get('content')})});toast('Message envoyé.');openConversationModal(conversationId,receiver)}catch(err){toast(err.message)}};
   }catch(err){toast(err.message)}
 }
@@ -1001,7 +1029,7 @@ async function renderNotifications(){
     <div class="notification-list">${items.map(n=>`<article class="notification-card notification-click ${n.is_read?'read':'unread'}" data-id="${n.id}" data-type="${esc(n.type)}" data-read="${n.is_read?'1':'0'}"><span class="notification-dot"></span><div class="notification-main"><div class="card-topline"><strong>${esc(n.title)}</strong><small>${new Date(n.created_at).toLocaleString('fr-FR')}</small></div><p>${esc(n.content)}</p><small class="pill">${esc(n.type)}</small></div><button type="button" class="notification-delete" data-id="${n.id}">Supprimer</button></article>`).join('')||'<div class="panel empty-state">Aucune notification.</div>'}</div>`;
   $('#contactSupportFromNotifications')?.addEventListener('click',()=>openMemberSupportModal());
   $('#markAllRead')?.addEventListener('click',async()=>{try{await api('/api/notifications/read-all',{method:'POST'});toast('Notifications marquées comme lues.');renderNotifications()}catch(err){toast(err.message)}});
-  $$('.notification-delete').forEach(b=>b.onclick=async e=>{e.stopPropagation();if(!confirm('Supprimer cette notification de votre compte ?'))return;try{await api(`/api/notifications/${b.dataset.id}`,{method:'DELETE'});toast('Notification supprimée.');renderNotifications()}catch(err){toast(err.message)}});
+  $$('.notification-delete').forEach(b=>b.onclick=async e=>{e.stopPropagation();if(!await professionalConfirm({title:'Supprimer cette notification ?',message:'La notification sera retirée uniquement de votre centre d’alertes.',note:'La trace administrative reste conservée lorsque l’événement est journalisé.',confirmLabel:'Supprimer',tone:'danger'}))return;try{await api(`/api/notifications/${b.dataset.id}`,{method:'DELETE'});toast('Notification supprimée de votre espace.');renderNotifications()}catch(err){toast(err.message)}});
   $$('.notification-click').forEach(card=>card.onclick=async e=>{
     if(e.target.closest('.notification-delete'))return;
     const id=Number(card.dataset.id),type=card.dataset.type,role=state.session.user.role;
@@ -1080,7 +1108,7 @@ async function renderSettings(){
   bindPasswordToggles();
   $('#passwordForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/change-password',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Mot de passe modifié. Vous devez vous reconnecter.');setTimeout(()=>location.reload(),900)}catch(err){toast(err.message)}};
   $('#logoutAllSessions')?.addEventListener('click',async()=>{if(!confirm('Déconnecter toutes les sessions de ce compte ?'))return;try{await api('/api/account/logout-all',{method:'POST'});location.reload()}catch(err){toast(err.message)}});
-  $('#deleteMyAccount').onclick=async()=>{if(!confirm('Envoyer au support GLOBAL EMPLOI une demande de suppression définitive de votre compte ? Votre compte restera actif jusqu’à la décision du Super Admin.'))return;try{await api('/api/account/delete-request',{method:'POST',body:'{}'});toast('Demande de suppression envoyée au support. Votre compte reste actif jusqu’à la décision du Super Admin.')}catch(err){toast(err.message)}};
+  $('#deleteMyAccount').onclick=async()=>{if(!await professionalConfirm({eyebrow:'SUPPRESSION DE COMPTE',title:'Demander la suppression définitive ?',message:'Votre demande sera transmise au support GLOBAL EMPLOI pour examen par le Super Admin.',note:'Votre compte restera actif et aucune donnée ne sera supprimée avant la décision administrative.',confirmLabel:'Envoyer la demande',tone:'danger'}))return;try{await api('/api/account/delete-request',{method:'POST',body:'{}'});toast('Demande de suppression envoyée au support. Votre compte reste actif jusqu’à la décision du Super Admin.')}catch(err){toast(err.message)}};
 }
 async function renderAdminInbox(){
   if(state.session.user.role!=='super_admin')throw new Error('Accès interdit');
@@ -1389,6 +1417,7 @@ document.querySelector('#publicNav a[href="#home"]')?.addEventListener('click',e
   window.scrollTo({top:0,behavior:'smooth'});
 });
 document.getElementById('contactLoginBtn')?.addEventListener('click',loginModal);
+document.getElementById('footerSupportBtn')?.addEventListener('click',()=>{if(!state.session)return loginModal();if(state.session.user.role==='super_admin')return navigateView('messages');openMemberSupportModal()});
 bindPasswordToggles();bindHomePrimaryActions();
 
 function directoryError(title,err){

@@ -784,14 +784,22 @@ async function api(req,env,url){
       WHERE j.id=? AND j.status='published' AND u.status='active'
       AND EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=j.recruiter_id AND s.status='active' AND s.plan IN ('standard','business') AND datetime(s.expires_at)>datetime('now'))`).bind(jobId).first();
     if(!job) return json({error:'Cette offre n’est plus disponible.'},404);
-    const b=await req.json().catch(()=>({}));
-    try{
+    const b=await req.json().catch(()=>({})),message=safeText(b.message,1200);
+    const existing=await env.JOB_DB.prepare('SELECT id,status FROM applications WHERE job_id=? AND candidate_id=?').bind(jobId,s.user.id).first();
+    if(existing){
+      if(!['cancelled','withdrawn'].includes(existing.status)) return json({error:'Vous avez déjà une candidature active pour cette offre.'},409);
       await env.JOB_DB.batch([
-        env.JOB_DB.prepare('INSERT INTO applications(job_id,candidate_id,message) VALUES(?,?,?)').bind(jobId,s.user.id,safeText(b.message,1200)),
-        env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'application','Nouvelle candidature',?)").bind(job.recruiter_id,`Un candidat vient de postuler à l’offre « ${safeText(job.title,120)} ».`)
+        env.JOB_DB.prepare("UPDATE applications SET status='submitted',message=?,created_at=?,updated_at=? WHERE id=?").bind(message,nowISO(),nowISO(),existing.id),
+        env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'application','Nouvelle candidature',?)").bind(job.recruiter_id,`Le candidat a postulé de nouveau à l’offre « ${safeText(job.title,120)} ».`)
       ]);
-      return json({ok:true},201);
-    }catch{return json({error:'Vous avez déjà postulé à cette offre.'},409);}
+      await audit(env,s.user.id,'APPLICATION_RESUBMITTED','application',existing.id,{job_id:jobId});
+      return json({ok:true,reapplied:true,id:existing.id},201);
+    }
+    await env.JOB_DB.batch([
+      env.JOB_DB.prepare('INSERT INTO applications(job_id,candidate_id,message) VALUES(?,?,?)').bind(jobId,s.user.id,message),
+      env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'application','Nouvelle candidature',?)").bind(job.recruiter_id,`Un candidat vient de postuler à l’offre « ${safeText(job.title,120)} ».`)
+    ]);
+    return json({ok:true},201);
   }
   if(p==='/api/candidates'&&m==='GET'){
     await ensureCandidateSchema(env);
@@ -843,14 +851,45 @@ async function api(req,env,url){
     const candidateId=Number(p.split('/')[3]);
     const cand=await env.JOB_DB.prepare("SELECT id FROM users WHERE id=? AND role='candidate' AND status='active'").bind(candidateId).first();
     if(!cand) return json({error:'Candidat introuvable.'},404);
-    const b=await req.json().catch(()=>({}));
-    try{
+    const b=await req.json().catch(()=>({})),message=safeText(b.message,1200);
+    const existing=await env.JOB_DB.prepare('SELECT id,status FROM recruitment_requests WHERE recruiter_id=? AND candidate_id=?').bind(s.user.id,candidateId).first();
+    if(existing){
+      await ensureClientActionSchema(env);
+      const hidden=await env.JOB_DB.prepare("SELECT COUNT(*) n FROM user_hidden_items WHERE item_type='recruitment_request' AND item_id=? AND user_id IN (?,?)").bind(existing.id,s.user.id,candidateId).first();
+      if(existing.status!=='declined' && !Number(hidden?.n||0)) return json({error:'Vous avez déjà une proposition active pour ce candidat.'},409);
       await env.JOB_DB.batch([
-        env.JOB_DB.prepare('INSERT INTO recruitment_requests(recruiter_id,candidate_id,message) VALUES(?,?,?)').bind(s.user.id,candidateId,safeText(b.message,1200)),
-        env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'recruitment','Nouvelle proposition de recrutement','Un recruteur souhaite entrer en contact avec vous pour une opportunité.')").bind(candidateId)
+        env.JOB_DB.prepare("UPDATE recruitment_requests SET status='sent',message=?,created_at=?,updated_at=? WHERE id=?").bind(message,nowISO(),nowISO(),existing.id),
+        env.JOB_DB.prepare("DELETE FROM user_hidden_items WHERE item_type='recruitment_request' AND item_id=? AND user_id IN (?,?)").bind(existing.id,s.user.id,candidateId),
+        env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'recruitment','Nouvelle proposition de recrutement','Un recruteur souhaite de nouveau entrer en contact avec vous pour une opportunité.')").bind(candidateId)
       ]);
-      return json({ok:true},201);
-    }catch{return json({error:'Vous avez déjà envoyé une demande de recrutement à ce candidat.'},409);}
+      await audit(env,s.user.id,'RECRUITMENT_REQUEST_RESENT','recruitment_request',existing.id,{candidate_id:candidateId});
+      return json({ok:true,resent:true,id:existing.id},201);
+    }
+    const created=await env.JOB_DB.prepare('INSERT INTO recruitment_requests(recruiter_id,candidate_id,message) VALUES(?,?,?) RETURNING id').bind(s.user.id,candidateId,message).first();
+    await env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'recruitment','Nouvelle proposition de recrutement','Un recruteur souhaite entrer en contact avec vous pour une opportunité.')").bind(candidateId).run();
+    return json({ok:true,id:created?.id},201);
+  }
+  if(p==='/api/recruiter/recruitment-requests'&&m==='GET'){
+    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
+    await ensureRecruitmentSchema(env); const hiddenReady=await hasClientActionSchema(env);
+    const rows=hiddenReady
+      ? await env.JOB_DB.prepare(`SELECT rr.*,u.email,p.first_name,p.last_name,p.profession,p.professional_title
+          FROM recruitment_requests rr JOIN users u ON u.id=rr.candidate_id LEFT JOIN candidate_profiles p ON p.user_id=rr.candidate_id
+          WHERE rr.recruiter_id=? AND NOT EXISTS(SELECT 1 FROM user_hidden_items h WHERE h.user_id=? AND h.item_type='recruitment_request' AND h.item_id=rr.id)
+          ORDER BY rr.updated_at DESC,rr.id DESC`).bind(s.user.id,s.user.id).all()
+      : await env.JOB_DB.prepare(`SELECT rr.*,u.email,p.first_name,p.last_name,p.profession,p.professional_title
+          FROM recruitment_requests rr JOIN users u ON u.id=rr.candidate_id LEFT JOIN candidate_profiles p ON p.user_id=rr.candidate_id
+          WHERE rr.recruiter_id=? ORDER BY rr.updated_at DESC,rr.id DESC`).bind(s.user.id).all();
+    return json({requests:rows.results||[]});
+  }
+  if(/^\/api\/recruiter\/recruitment-requests\/\d+$/.test(p)&&m==='DELETE'){
+    const s=await requireSession(req,env); if(s.user.role!=='recruiter') return json({error:'Réservé aux recruteurs.'},403);
+    await ensureClientActionSchema(env); const id=Number(p.split('/').pop());
+    const row=await env.JOB_DB.prepare('SELECT id FROM recruitment_requests WHERE id=? AND recruiter_id=?').bind(id,s.user.id).first();
+    if(!row) return json({error:'Proposition introuvable.'},404);
+    await env.JOB_DB.prepare("INSERT OR IGNORE INTO user_hidden_items(user_id,item_type,item_id) VALUES(?,'recruitment_request',?)").bind(s.user.id,id).run();
+    await audit(env,s.user.id,'RECRUITMENT_REQUEST_HIDDEN','recruitment_request',id,{side:'recruiter'});
+    return json({ok:true});
   }
   if(p==='/api/candidate/recruitment-requests'&&m==='GET'){
     const s=await requireSession(req,env); if(s.user.role!=='candidate') return json({error:'Réservé aux demandeurs d’emploi.'},403);
@@ -1020,10 +1059,11 @@ async function api(req,env,url){
     return json({ok:true});
   }
   if(/^\/api\/notifications\/\d+$/.test(p)&&m==='DELETE'){
-    const s=await requireSession(req,env),id=Number(p.split('/').pop());
-    const r=await env.JOB_DB.prepare('DELETE FROM notifications WHERE id=? AND user_id=?').bind(id,s.user.id).run();
-    if(!Number(r?.meta?.changes||0)) return json({error:'Notification introuvable.'},404);
-    await audit(env,s.user.id,'NOTIFICATION_DELETED','notification',id);
+    const s=await requireSession(req,env),id=Number(p.split('/').pop()); await ensureClientActionSchema(env);
+    const row=await env.JOB_DB.prepare('SELECT id FROM notifications WHERE id=? AND user_id=?').bind(id,s.user.id).first();
+    if(!row) return json({error:'Notification introuvable.'},404);
+    await env.JOB_DB.prepare("INSERT OR IGNORE INTO user_hidden_items(user_id,item_type,item_id) VALUES(?,'notification',?)").bind(s.user.id,id).run();
+    await audit(env,s.user.id,'NOTIFICATION_HIDDEN','notification',id);
     return json({ok:true});
   }
   if(p==='/api/messages'&&m==='GET'){
@@ -1039,7 +1079,6 @@ async function api(req,env,url){
     const s=await requireSession(req,env); await ensureClientActionSchema(env); const id=Number(p.split('/').pop());
     const row=await env.JOB_DB.prepare(`SELECT m.id,m.sender_id,m.conversation_id FROM messages m JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=? WHERE m.id=?`).bind(s.user.id,id).first();
     if(!row) return json({error:'Message introuvable.'},404);
-    if(Number(row.sender_id)===Number(s.user.id)) return json({error:'Vous pouvez supprimer de votre espace uniquement les messages reçus.'},403);
     await env.JOB_DB.prepare("INSERT OR IGNORE INTO user_hidden_items(user_id,item_type,item_id) VALUES(?,'message',?)").bind(s.user.id,id).run();
     await audit(env,s.user.id,'MESSAGE_HIDDEN','message',id);
     return json({ok:true});
@@ -1048,7 +1087,12 @@ async function api(req,env,url){
     const s=await requireSession(req,env), b=await req.json(); const receiver=Number(b.receiver_id), content=safeText(b.content,2500); if(!receiver||!content||receiver===s.user.id) return json({error:'Message invalide.'},400);
     const c=await env.JOB_DB.prepare(`SELECT cm1.conversation_id id FROM conversation_members cm1 JOIN conversation_members cm2 ON cm1.conversation_id=cm2.conversation_id WHERE cm1.user_id=? AND cm2.user_id=? LIMIT 1`).bind(s.user.id,receiver).first(); let cid=c?.id;
     if(!cid){ const cr=await env.JOB_DB.prepare('INSERT INTO conversations DEFAULT VALUES RETURNING id').first(); cid=cr.id; await env.JOB_DB.batch([env.JOB_DB.prepare('INSERT INTO conversation_members(conversation_id,user_id) VALUES(?,?)').bind(cid,s.user.id),env.JOB_DB.prepare('INSERT INTO conversation_members(conversation_id,user_id) VALUES(?,?)').bind(cid,receiver)]); }
-    await env.JOB_DB.prepare('INSERT INTO messages(conversation_id,sender_id,content) VALUES(?,?,?)').bind(cid,s.user.id,content).run(); await env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'message','Nouveau message','Vous avez reçu un nouveau message.')").bind(receiver).run(); return json({ok:true,conversation_id:cid},201);
+    await ensureClientActionSchema(env);
+    await env.JOB_DB.batch([
+      env.JOB_DB.prepare('INSERT INTO messages(conversation_id,sender_id,content) VALUES(?,?,?)').bind(cid,s.user.id,content),
+      env.JOB_DB.prepare("DELETE FROM user_hidden_items WHERE item_type='conversation' AND item_id=? AND user_id IN (?,?)").bind(cid,s.user.id,receiver),
+      env.JOB_DB.prepare("INSERT INTO notifications(user_id,type,title,content) VALUES(?, 'message','Nouveau message','Vous avez reçu un nouveau message.')").bind(receiver)
+    ]); return json({ok:true,conversation_id:cid},201);
   }
   if(p==='/api/conversations'&&m==='GET'){
     const s=await requireSession(req,env); const hiddenReady=await hasClientActionSchema(env);
@@ -1063,7 +1107,8 @@ async function api(req,env,url){
           JOIN users ou ON ou.id=other.user_id
           LEFT JOIN candidate_profiles cp ON cp.user_id=ou.id
           LEFT JOIN recruiter_profiles rp ON rp.user_id=ou.id
-          ORDER BY c.updated_at DESC`).bind(s.user.id,s.user.id,s.user.id).all()
+          WHERE NOT EXISTS(SELECT 1 FROM user_hidden_items hc WHERE hc.user_id=? AND hc.item_type='conversation' AND hc.item_id=c.id)
+          ORDER BY c.updated_at DESC`).bind(s.user.id,s.user.id,s.user.id,s.user.id).all()
       : await env.JOB_DB.prepare(`SELECT c.id,c.updated_at,
           (SELECT content FROM messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) last_message,
           ou.id other_user_id,ou.email other_email,ou.role other_role,
@@ -1077,7 +1122,16 @@ async function api(req,env,url){
           ORDER BY c.updated_at DESC`).bind(s.user.id,s.user.id).all();
     return json({conversations:rows.results||[]});
   }
-  if(p==='/api/notifications'&&m==='GET'){ const s=await requireSession(req,env); const rows=await env.JOB_DB.prepare('SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 100').bind(s.user.id).all(); return json({notifications:rows.results}); }
+  if(/^\/api\/conversations\/\d+$/.test(p)&&m==='DELETE'){
+    const s=await requireSession(req,env); await ensureClientActionSchema(env); const id=Number(p.split('/').pop());
+    const member=await env.JOB_DB.prepare('SELECT 1 FROM conversation_members WHERE conversation_id=? AND user_id=?').bind(id,s.user.id).first();
+    if(!member) return json({error:'Conversation introuvable.'},404);
+    await env.JOB_DB.prepare("INSERT OR IGNORE INTO user_hidden_items(user_id,item_type,item_id) VALUES(?,'conversation',?)").bind(s.user.id,id).run();
+    await audit(env,s.user.id,'CONVERSATION_HIDDEN','conversation',id);
+    return json({ok:true});
+  }
+
+  if(p==='/api/notifications'&&m==='GET'){ const s=await requireSession(req,env); const hiddenReady=await hasClientActionSchema(env); const rows=hiddenReady?await env.JOB_DB.prepare(`SELECT * FROM notifications n WHERE user_id=? AND NOT EXISTS(SELECT 1 FROM user_hidden_items h WHERE h.user_id=? AND h.item_type='notification' AND h.item_id=n.id) ORDER BY n.id DESC LIMIT 100`).bind(s.user.id,s.user.id).all():await env.JOB_DB.prepare('SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 100').bind(s.user.id).all(); return json({notifications:rows.results||[]}); }
 
   if(p==='/api/admin/subscription-requests'&&m==='GET'){ await requireAdmin(req,env); await ensureAdminDataReady(env); const rows=await env.JOB_DB.prepare(`SELECT sr.*,COALESCE(u.email,'Compte supprimé #'||sr.user_id) email,COALESCE(u.role,'unknown') role FROM subscription_requests sr LEFT JOIN users u ON u.id=sr.user_id WHERE sr.status='pending' ORDER BY sr.id DESC`).all(); return json({requests:rows.results||[]}); }
   if(/^\/api\/admin\/subscription-requests\/\d+\/(approve|reject)$/.test(p)&&m==='POST'){
