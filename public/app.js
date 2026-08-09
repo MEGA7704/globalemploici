@@ -374,6 +374,7 @@ function syncViewNavigation(view){
 function showPublicHome(anchor='home'){
   state.view='home';
   $('#guestHome').classList.remove('hidden');
+  $('#guestHome').classList.add('home-overview');
   $('#app').classList.add('hidden');
   document.querySelectorAll('#guestHome > section').forEach(s=>s.classList.remove('public-page-hidden'));
   syncViewNavigation('home');
@@ -423,13 +424,13 @@ async function boot(){
   applyPublicHashRoute();
 }
 function showGuest(){
-  state.view='home';$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');
+  state.view='home';$('#guestHome').classList.remove('hidden');$('#guestHome').classList.add('home-overview');$('#app').classList.add('hidden');
   document.querySelectorAll('#guestHome > section').forEach(s=>s.classList.remove('public-page-hidden'));
   $('#loginBtn').classList.remove('hidden');$('#registerBtn').classList.remove('hidden');$('#accountControl').classList.add('hidden');
   buildConnectedTopNav();closeAccountMenu();syncViewNavigation('home');loadPublicStats();
 }
 function showConnectedHome(){
-  const u=state.session.user;state.view='home';$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');
+  const u=state.session.user;state.view='home';$('#guestHome').classList.remove('hidden');$('#guestHome').classList.add('home-overview');$('#app').classList.add('hidden');
   document.querySelectorAll('#guestHome > section').forEach(s=>s.classList.remove('public-page-hidden'));
   $('#loginBtn').classList.add('hidden');$('#registerBtn').classList.add('hidden');$('#accountControl').classList.remove('hidden');
   buildAccountMenu();buildConnectedTopNav();updateSubChip();syncViewNavigation('home');loadPublicStats();
@@ -1339,6 +1340,7 @@ function openPublicPage(page){
   const target=document.getElementById(page);
   if(!target)return;
   $('#guestHome')?.classList.remove('hidden');
+  $('#guestHome')?.classList.remove('home-overview');
   $('#app')?.classList.add('hidden');
   sections.forEach(s=>s.classList.toggle('public-page-hidden',s.id!==page));
   document.querySelectorAll('#publicNav a').forEach(a=>{
@@ -1359,7 +1361,7 @@ document.querySelector('#publicNav a[href="#home"]')?.addEventListener('click',e
   e.preventDefault();
   document.querySelectorAll('#guestHome > section').forEach(s=>s.classList.remove('public-page-hidden'));
   if(state.session) showPublicHome('home');
-  else {$('#guestHome').classList.remove('hidden');$('#app').classList.add('hidden');syncViewNavigation('home');}
+  else {$('#guestHome').classList.remove('hidden');$('#guestHome').classList.add('home-overview');$('#app').classList.add('hidden');syncViewNavigation('home');}
   buildConnectedTopNav();
   $('#publicNav')?.classList.remove('open');
   $('#mobileMenuBtn')?.setAttribute('aria-expanded','false');
