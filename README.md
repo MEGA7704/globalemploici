@@ -1,6 +1,19 @@
-# GLOBAL EMPLOI V31
+# GLOBAL EMPLOI V32
 
-Correction structurelle des délais de chargement des menus Admin, Demandeur et Recruteur. La navigation n'exécute plus aucune reconstruction/migration D1. Voir `DEPLOIEMENT_V31.md`.
+V32 conserve les corrections structurelles V31 et applique la nouvelle présentation de la page d’accueil sans modifier les API ni les liaisons de données.
+
+Modifications accueil V32 :
+- boutons « Je cherche un emploi » et « Je recrute » centrés ;
+- 6 recherches populaires ;
+- image `hero-global-emploi-team.png` affichée entièrement sans couper les personnages ;
+- suppression des cartes flottantes ;
+- statistiques sans cadre global + ligne rose ;
+- 3 cartes horizontales Offres / Talents / Recruteurs avec boutons déplacés ;
+- suppression des sections Domaines professionnels, Conseils carrière et À propos ;
+- suppression des liens devenus obsolètes ;
+- responsive desktop, tablette et mobile.
+
+Voir `DEPLOIEMENT_V32.md`.
 
 
 ## V30 — correction de finalisation de l’inscription

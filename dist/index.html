@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="description" content="GLOBAL EMPLOI - plateforme ivoirienne de recrutement, d'emploi, de métiers et de mise en relation professionnelle." />
-  <meta name="theme-color" content="#1557D6" />
+  <meta name="theme-color" content="#C2185B" />
   <meta name="referrer" content="no-referrer" />
   <script>
     // Défense supplémentaire : ne jamais conserver des identifiants dans l’URL.
@@ -90,24 +90,23 @@
 
       <div class="popular-searches">
         <span>Recherches populaires :</span>
-        <button data-search="Comptabilité">Comptabilité</button><button data-search="Informatique">Informatique</button><button data-search="Commercial">Commercial</button><button data-search="Marketing">Marketing</button><button data-search="Ressources humaines">Ressources humaines</button><button data-search="Chauffeur">Chauffeur</button><button data-search="Maçonnerie">Maçonnerie</button>
+        <button data-search="Comptabilité">Comptabilité</button>
+        <button data-search="Informatique">Informatique</button>
+        <button data-search="Commercial">Commercial</button>
+        <button data-search="Marketing">Marketing</button>
+        <button data-search="Chauffeur">Chauffeur</button>
+        <button data-search="Maçonnerie">Maçonnerie</button>
       </div>
 
       <div class="hero-cta-row">
         <button class="btn primary big" data-open-register="candidate" data-home-primary="candidate">Je cherche un emploi</button>
         <button class="btn soft-blue big" data-open-register="recruiter" data-home-primary="recruiter">Je recrute</button>
       </div>
-      <div class="hero-directory-row">
-        <button class="btn outline-blue" id="browseJobsHome">Voir toutes les offres disponibles</button>
-        <button class="btn outline-blue" id="browseCandidatesHome">Voir tous les talents disponibles</button>
-      </div>
     </div>
 
-    <div class="hero-visual" aria-label="Professionnel souriant dans un environnement de bureau">
+    <div class="hero-visual" aria-label="Équipe de professionnels africains dans un environnement moderne">
       <div class="hero-blob"></div>
       <img src="/hero-global-emploi-team.png" alt="Équipe de professionnels africains en costume dans un environnement de bureau moderne" loading="eager">
-      <div class="floating-card floating-top"><span class="mini-icon">✓</span><div><strong>Profils vérifiés</strong><small>Des talents prêts à travailler</small></div></div>
-      <div class="floating-card floating-bottom"><span class="mini-icon orange">↗</span><div><strong>Opportunités</strong><small>Emploi, contrat et mission</small></div></div>
     </div>
   </section>
 
@@ -116,6 +115,30 @@
       <div class="stat-item"><span class="stat-icon">▣</span><div><strong id="realJobsCount">—</strong><span>Offres d’emploi</span><small id="realJobsMove">Données en temps réel</small></div></div>
       <div class="stat-item"><span class="stat-icon">▦</span><div><strong id="realCompaniesCount">—</strong><span>Entreprises</span><small id="realCompaniesMove">Données en temps réel</small></div></div>
       <div class="stat-item"><span class="stat-icon">♙</span><div><strong id="realCandidatesCount">—</strong><span>Candidats inscrits</span><small id="realCandidatesMove">Données en temps réel</small></div></div>
+    </div>
+    <div class="stats-pink-divider" aria-hidden="true"></div>
+  </section>
+
+  <section class="home-access-section" aria-label="Accès rapides GLOBAL EMPLOI">
+    <div class="home-access-grid">
+      <article class="home-access-card jobs-access-card">
+        <span class="section-kicker">OFFRES D’EMPLOI</span>
+        <h2>Toutes les offres disponibles</h2>
+        <p>Seules les offres publiées par des recruteurs disposant d’un abonnement STANDARD ou BUSINESS actif sont affichées.</p>
+        <button class="btn outline-blue" id="browseJobsHome">Voir toutes les offres disponibles</button>
+      </article>
+      <article class="home-access-card candidates-access-card">
+        <span class="section-kicker">PROFILS / CANDIDATS</span>
+        <h2>Découvrez les talents disponibles</h2>
+        <p>Consultez les profils professionnels actifs et recherchez un candidat par métier ou par ville.</p>
+        <button class="btn outline-blue" id="browseCandidatesHome">Voir tous les talents disponibles</button>
+      </article>
+      <article class="home-access-card recruiter-access-card">
+        <span class="section-kicker">ESPACE RECRUTEURS</span>
+        <h2>Vous êtes une entreprise&nbsp;?</h2>
+        <p>Publiez vos offres d’emploi et trouvez les meilleurs talents.</p>
+        <button class="btn primary" data-open-register="recruiter">Publier une offre</button>
+      </article>
     </div>
   </section>
 
@@ -151,17 +174,6 @@
   <div id="publicCandidatesGrid" class="candidate-market-grid"></div><div id="publicCandidatesPagination" class="public-pagination"></div>
 </section>
 
-  <section id="companies" class="section-shell business-banner">
-    <div class="business-icon">▦</div>
-    <div><span class="section-kicker">ESPACE RECRUTEURS</span><h2>Vous êtes une entreprise ?</h2><p>Publiez vos offres d’emploi et trouvez les meilleurs talents.</p></div>
-    <button class="btn primary big" data-open-register="recruiter">Publier une offre</button>
-  </section>
-
-  <section id="trades" class="section-shell trades-section">
-    <div class="section-head centered"><div><span class="section-kicker">DOMAINES PROFESSIONNELS</span><h2>Explorez les métiers</h2><p>Recherchez rapidement les compétences qui correspondent à vos besoins.</p></div></div>
-    <div class="trade-chips"><span>Administration</span><span>Agriculture</span><span>Bâtiment</span><span>Chauffeur</span><span>Commerce</span><span>Comptabilité</span><span>Couture</span><span>Coiffure</span><span>Électricité</span><span>Informatique</span><span>Mécanique</span><span>Menuiserie</span><span>Plomberie</span><span>Restauration</span><span>Sécurité</span><span>Transport</span></div>
-  </section>
-
   <section id="plans" class="section-shell plans-public">
     <div class="section-head centered"><div><span class="section-kicker">ABONNEMENTS CANDIDATS</span><h2>Choisissez la formule qui vous convient</h2><p>Commencez gratuitement, puis augmentez la durée et la visibilité de votre profil.</p></div></div>
     <div class="plans">
@@ -171,12 +183,8 @@
     </div>
   </section>
 
-  <section id="advice" class="section-shell advice-strip"><div><span class="section-kicker">CONSEILS CARRIÈRE</span><h2>Préparez mieux votre prochaine opportunité</h2><p>Un profil clair, des compétences bien présentées et une candidature adaptée augmentent vos chances d’être remarqué.</p></div><button class="btn soft-blue" data-open-register="candidate">Créer mon profil</button></section>
-
-  <section id="about" class="section-shell about-section"><div><span class="section-kicker">À PROPOS</span><h2>GLOBAL EMPLOI rapproche les talents et les recruteurs</h2></div><p>La plateforme facilite la mise en relation entre demandeurs d’emploi, professionnels de métier, travailleurs indépendants, entreprises et particuliers pour des emplois, contrats, missions et prestations.</p></section>
-
   <footer id="contact" class="site-footer">
-    <div class="footer-main"><div class="footer-brand"><div class="brand-name"><b>GLOBAL</b> <strong>EMPLOI</strong></div><p>L’opportunité à portée de main.</p></div><div><h4>Plateforme</h4><a href="#jobs" data-public-page="jobs">Offres d’emploi</a><a href="#candidates" data-public-page="candidates">Profils</a><a href="#trades" data-public-page="trades">Métiers</a></div><div><h4>Recrutement</h4><button data-open-register="recruiter">Créer un compte recruteur</button><button data-open-register="candidate">Créer un profil candidat</button></div><div><h4>Contact</h4><p>Côte d’Ivoire</p><p>Support GLOBAL EMPLOI</p></div></div>
+    <div class="footer-main"><div class="footer-brand"><div class="brand-name"><b>GLOBAL</b> <strong>EMPLOI</strong></div><p>L’opportunité à portée de main.</p></div><div><h4>Plateforme</h4><a href="#jobs" data-public-page="jobs">Offres d’emploi</a><a href="#candidates" data-public-page="candidates">Profils</a><a href="#plans" data-public-page="plans">Abonnements</a></div><div><h4>Recrutement</h4><button data-open-register="recruiter">Créer un compte recruteur</button><button data-open-register="candidate">Créer un profil candidat</button></div><div><h4>Contact</h4><p>Côte d’Ivoire</p><p>Support GLOBAL EMPLOI</p></div></div>
     <div class="footer-bottom"><span>© 2026 GLOBAL EMPLOI. Tous droits réservés.</span><span>Plateforme sécurisée Cloudflare</span></div>
   </footer>
 </div>

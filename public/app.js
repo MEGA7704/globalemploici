@@ -1322,7 +1322,7 @@ $('#homeSearchBtn').onclick=()=>{
   openPublicPage('jobs');
 };
 
-const PUBLIC_HASH_PAGES=new Set(['jobs','candidates','trades','plans','about','companies','advice']);
+const PUBLIC_HASH_PAGES=new Set(['jobs','candidates','plans']);
 function applyPublicHashRoute(){
   const page=String(location.hash||'').replace(/^#/,'').trim();
   if(PUBLIC_HASH_PAGES.has(page)) openPublicPage(page);
