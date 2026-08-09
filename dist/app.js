@@ -62,6 +62,17 @@ function esc(value){
 
 // V28 — formulaire d'inscription réellement défini. La V27 appelait registerModal()
 // depuis plusieurs boutons sans jamais fournir la fonction.
+function candidateLatestBirthDate(){
+  const now=new Date();
+  const limit=new Date(now.getFullYear()-18,now.getMonth(),now.getDate());
+  const y=limit.getFullYear(),m=String(limit.getMonth()+1).padStart(2,'0'),d=String(limit.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+function isCandidateAdultBirthDate(value){
+  const raw=String(value||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  return raw<=candidateLatestBirthDate();
+}
 function registrationFeedback(message='',type='error'){
   const box=$('#registerFeedback');
   if(!box) return;
@@ -91,6 +102,10 @@ function validateRegistrationForm(form,isCandidate){
   if(email && !email.checkValidity()) return {ok:false,el:email,message:'Veuillez saisir une adresse e-mail valide.'};
   const password=get('password');
   if(password && String(password.value||'').length<8) return {ok:false,el:password,message:'Le mot de passe doit contenir au moins 8 caractères.'};
+  if(isCandidate){
+    const birth=get('birth_date');
+    if(birth && !isCandidateAdultBirthDate(birth.value)) return {ok:false,el:birth,message:'Inscription refusée : vous devez avoir au moins 18 ans pour créer un compte Demandeur sur GLOBAL EMPLOI.'};
+  }
   const terms=get('terms');
   if(!terms?.checked) return {ok:false,el:terms,message:'Veuillez accepter les conditions d’utilisation.'};
   if(!isCandidate){
@@ -159,7 +174,8 @@ function registerModal(initialRole='candidate'){
         <div class="field"><label>Nom *</label><input name="last_name" required autocomplete="family-name"></div>
         <div class="field"><label>Prénoms *</label><input name="first_name" required autocomplete="given-name"></div>
         ${candidate?`
-          <div class="field"><label>Date de naissance *</label><input name="birth_date" type="date" required></div>
+          <div class="age-restriction-notice full"><strong>18 ANS MINIMUM</strong><span>L’inscription comme Demandeur d’emploi est strictement réservée aux personnes âgées de 18 ans ou plus.</span></div>
+          <div class="field"><label>Date de naissance *</label><input name="birth_date" type="date" max="${candidateLatestBirthDate()}" required><small>Vous devez avoir au moins 18 ans à la date de l’inscription.</small></div>
           <div class="field"><label>Nationalité *</label><input name="nationality" value="Ivoirienne" required></div>
           <div class="field"><label>Ville de résidence *</label><input name="city" placeholder="Ex. Abidjan, Bouaké, Diabo…" required></div>
           <div class="field"><label>Pays *</label><input name="country" value="Côte d’Ivoire" required></div>
@@ -172,8 +188,16 @@ function registerModal(initialRole='candidate'){
         <div class="field"><label>WhatsApp</label><input name="whatsapp" type="tel"></div>
         <div class="field full"><label>E-mail *</label><input name="email" type="email" autocomplete="username" required></div>
         <div class="field full"><label>Mot de passe *</label><div class="password-wrap"><input id="registerPassword" name="password" type="password" minlength="8" autocomplete="new-password" required><button class="password-toggle" type="button" data-toggle-password="registerPassword" aria-label="Afficher le mot de passe">◉</button></div><small>8 caractères minimum.</small></div>
-        <label class="check-row full"><input type="checkbox" name="terms" value="1" required> J’accepte les conditions d’utilisation.</label>
-        ${candidate?'':`<label class="check-row full"><input type="checkbox" name="privacy" value="1" required> J’accepte la politique de confidentialité.</label>`}
+        <div class="registration-legal-box full">
+          <strong>Documents à consulter avant l’inscription</strong>
+          <p>Les Conditions Générales d’Utilisation et la Politique de confidentialité sont accessibles à tous les utilisateurs avant la création du compte.</p>
+          <div class="registration-legal-links">
+            <a href="/#cgu" target="_blank" rel="noopener">Lire les Conditions Générales d’Utilisation</a>
+            <a href="/#confidentialite" target="_blank" rel="noopener">Lire la Politique de confidentialité</a>
+          </div>
+        </div>
+        <label class="check-row full"><input type="checkbox" name="terms" value="1" required> J’accepte les <a href="/#cgu" target="_blank" rel="noopener">conditions d’utilisation</a>.</label>
+        ${candidate?'':`<label class="check-row full"><input type="checkbox" name="privacy" value="1" required> J’accepte la <a href="/#confidentialite" target="_blank" rel="noopener">politique de confidentialité</a>.</label>`}
         <div class="full"><button id="registerSubmit" class="btn primary big" type="submit">Créer mon compte ${candidate?'demandeur':'recruteur'}</button></div>
       </form>
       <p class="centered-login">Déjà inscrit ? <button type="button" class="link-btn" id="openLoginFromRegister">Se connecter</button></p>
@@ -1107,7 +1131,18 @@ async function renderSettings(){
     <div class="panel danger-zone"><h3>Demander la suppression de mon compte</h3><p class="muted">Le clic n’efface plus directement votre compte. Il transmet une demande officielle au support GLOBAL EMPLOI. Le Super Admin vérifie la demande et décide de la suppression définitive.</p><button id="deleteMyAccount" class="btn danger">Supprimer définitivement mon compte</button></div>`;
   bindPasswordToggles();
   $('#passwordForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/change-password',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});toast('Mot de passe modifié. Vous devez vous reconnecter.');setTimeout(()=>location.reload(),900)}catch(err){toast(err.message)}};
-  $('#logoutAllSessions')?.addEventListener('click',async()=>{if(!confirm('Déconnecter toutes les sessions de ce compte ?'))return;try{await api('/api/account/logout-all',{method:'POST'});location.reload()}catch(err){toast(err.message)}});
+  $('#logoutAllSessions')?.addEventListener('click',async()=>{
+    if(!await professionalConfirm({
+      eyebrow:'SÉCURITÉ DU COMPTE',
+      title:'Déconnecter toutes les sessions ?',
+      message:'Toutes les sessions ouvertes avec ce compte seront immédiatement invalidées sur tous les appareils.',
+      note:'Vous serez également déconnecté de cet appareil et devrez vous reconnecter avec votre mot de passe.',
+      confirmLabel:'Déconnecter toutes les sessions',
+      cancelLabel:'Annuler',
+      tone:'danger'
+    }))return;
+    try{await api('/api/account/logout-all',{method:'POST'});location.reload()}catch(err){toast(err.message)}
+  });
   $('#deleteMyAccount').onclick=async()=>{if(!await professionalConfirm({eyebrow:'SUPPRESSION DE COMPTE',title:'Demander la suppression définitive ?',message:'Votre demande sera transmise au support GLOBAL EMPLOI pour examen par le Super Admin.',note:'Votre compte restera actif et aucune donnée ne sera supprimée avant la décision administrative.',confirmLabel:'Envoyer la demande',tone:'danger'}))return;try{await api('/api/account/delete-request',{method:'POST',body:'{}'});toast('Demande de suppression envoyée au support. Votre compte reste actif jusqu’à la décision du Super Admin.')}catch(err){toast(err.message)}};
 }
 async function renderAdminInbox(){
@@ -1355,7 +1390,15 @@ async function recruiterVerificationAction(id,action){
 }
 
 async function adminDeleteUser(id,email){
-  if(!confirm(`Supprimer définitivement le compte ${email} et toutes ses publications liées ?`))return;
+  if(!await professionalConfirm({
+    eyebrow:'SUPPRESSION ADMINISTRATIVE',
+    title:'Supprimer définitivement ce compte ?',
+    message:`Le compte ${email} ainsi que ses publications et données liées seront supprimés selon les règles de suppression de GLOBAL EMPLOI.`,
+    note:'Cette action est réservée au Super Admin et peut être irréversible. Vérifiez l’identité du compte avant de confirmer.',
+    confirmLabel:'Supprimer définitivement',
+    cancelLabel:'Annuler',
+    tone:'danger'
+  }))return;
   try{await api(`/api/admin/users/${id}`,{method:'DELETE'});toast('Compte et publications supprimés.');renderAdminMembers()}catch(err){toast(err.message)}
 }
 
@@ -1371,7 +1414,7 @@ if(mobileMenuBtn){mobileMenuBtn.onclick=()=>{const nav=$('#publicNav');const ope
 // V35 : la recherche rapide du Hero a été retirée du design.
 // Les recherches détaillées restent disponibles dans les pages publiques Offres et Profils.
 
-const PUBLIC_HASH_PAGES=new Set(['jobs','candidates','plans']);
+const PUBLIC_HASH_PAGES=new Set(['jobs','candidates','plans','cgu','confidentialite']);
 function applyPublicHashRoute(){
   const page=String(location.hash||'').replace(/^#/,'').trim();
   if(PUBLIC_HASH_PAGES.has(page)) openPublicPage(page);
@@ -1405,6 +1448,7 @@ function openPublicPage(page){
 document.querySelectorAll('[data-public-page]').forEach(a=>a.addEventListener('click',e=>{
   e.preventDefault(); openPublicPage(a.dataset.publicPage);
 }));
+document.querySelectorAll('[data-legal-home]').forEach(b=>b.addEventListener('click',()=>showPublicHome('home')));
 document.querySelector('#publicNav a[href="#home"]')?.addEventListener('click',e=>{
   e.preventDefault();
   document.querySelectorAll('#guestHome > section').forEach(s=>s.classList.remove('public-page-hidden'));

@@ -11,6 +11,23 @@ function parseCookies(req){const out={};(req.headers.get('cookie')||'').split(';
 function b64(bytes){return btoa(String.fromCharCode(...bytes))}
 function fromB64(s){return Uint8Array.from(atob(s),c=>c.charCodeAt(0))}
 function safeText(v,max=4000){return String(v??'').trim().slice(0,max)}
+function candidateAgeFromBirthDate(value,reference=new Date()){
+  const raw=safeText(value,20);
+  const match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if(!match) return null;
+  const year=Number(match[1]),month=Number(match[2]),day=Number(match[3]);
+  const birth=new Date(Date.UTC(year,month-1,day));
+  if(Number.isNaN(birth.getTime()) || birth.getUTCFullYear()!==year || birth.getUTCMonth()!==month-1 || birth.getUTCDate()!==day) return null;
+  const now=new Date(reference);
+  let age=now.getUTCFullYear()-year;
+  const currentMonth=now.getUTCMonth()+1,currentDay=now.getUTCDate();
+  if(currentMonth<month || (currentMonth===month && currentDay<day)) age--;
+  return age;
+}
+function candidateIsAdult(value,reference=new Date()){
+  const age=candidateAgeFromBirthDate(value,reference);
+  return age!==null && age>=18;
+}
 function validEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)}
 function sessionCookie(token,maxAge=86400){return `ge_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`}
 function clearCookie(){return 'ge_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'}
@@ -386,6 +403,7 @@ async function handleRegister(req,env){
   const email=safeText(b.email,190).toLowerCase(), password=String(b.password||''), phone=safeText(b.phone,40);
   if(!validEmail(email)||password.length<8) return json({error:'E-mail invalide ou mot de passe trop court.'},400);
   if(role==='candidate' && (!b.terms || !safeText(b.last_name,100) || !safeText(b.first_name,100) || !safeText(b.birth_date,20) || !safeText(b.nationality,100) || !phone || !safeText(b.city,120) || !safeText(b.country,100))) return json({error:'Veuillez compléter toutes les informations personnelles obligatoires et accepter les conditions.'},400);
+  if(role==='candidate' && !candidateIsAdult(b.birth_date)) return json({error:'Inscription refusée : GLOBAL EMPLOI est interdit aux demandeurs d’emploi de moins de 18 ans.',code:'CANDIDATE_MINIMUM_AGE_18'},403);
   if(role==='recruiter' && (!b.terms || !b.privacy || !safeText(b.last_name,100) || !safeText(b.first_name,100) || !safeText(b.job_title,150) || !phone || !safeText(b.country,100))) return json({error:'Veuillez compléter les informations obligatoires du recruteur et accepter les conditions et la politique de confidentialité.'},400);
   const exists=await env.JOB_DB.prepare('SELECT id FROM users WHERE email=?').bind(email).first(); if(exists) return json({error:'Ce compte existe déjà.'},409);
   let userId=null;

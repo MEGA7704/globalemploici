@@ -628,3 +628,55 @@ body{background:linear-gradient(180deg,#fff 0%,#fffafd 48%,#fff6fa 100%)}
 .premium-footer-separator{height:1px;background:rgba(255,255,255,.15);margin:24px 0 14px}.premium-footer-legal{display:block!important;border:0!important;margin:0!important;padding:0!important;text-align:center!important;color:#C9BDC5!important;font-size:10.5px!important;letter-spacing:.15px}
 @media(max-width:900px){.premium-footer-grid{grid-template-columns:1fr 1fr!important}.premium-footer-brand{grid-column:1/-1}.premium-footer{padding-top:34px!important}}
 @media(max-width:640px){.professional-confirm-actions{flex-direction:column-reverse}.professional-confirm-actions .btn{width:100%}.conversation-row-wrap{grid-template-columns:1fr}.conversation-delete-client{padding:9px 12px;width:max-content;justify-self:end}.premium-footer{padding:30px 18px 18px!important}.premium-footer-grid{grid-template-columns:1fr!important;gap:20px!important}.premium-footer-brand{grid-column:auto}.premium-footer-title{font-size:20px}.premium-footer-brand p{font-size:10px!important}.premium-footer-separator{margin-top:20px}}
+
+
+/* V39 — pages juridiques publiques, accessibles avant inscription */
+.hero-legal-links{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;max-width:850px;margin-top:16px;font-size:11px;color:#7A6270}
+.hero-legal-links span:first-child{font-weight:750;color:#5C4050}
+.hero-legal-links a{color:#C2185B;font-weight:750;text-decoration:none;border-bottom:1px solid rgba(194,24,91,.25)}
+.hero-legal-links a:hover{border-bottom-color:#C2185B}
+.registration-legal-box{background:#FFF4F8;border:1px solid #F0D0DD;border-radius:14px;padding:14px 16px;color:#5B3B4B}
+.registration-legal-box strong{display:block;color:#3A1027;margin-bottom:4px}
+.registration-legal-box p{margin:0 0 10px;font-size:12px;line-height:1.55}
+.registration-legal-links{display:flex;gap:10px;flex-wrap:wrap}
+.registration-legal-links a,.check-row a{color:#C2185B;font-weight:750;text-decoration:underline;text-underline-offset:2px}
+.legal-page{max-width:1180px;padding-top:50px;padding-bottom:70px}
+.legal-page-toolbar{position:sticky;top:92px;z-index:8;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:18px;background:rgba(255,255,255,.96);backdrop-filter:blur(16px);border:1px solid #F0DCE5;border-radius:18px;padding:13px 16px;margin-bottom:24px;box-shadow:0 12px 30px rgba(58,16,39,.08)}
+.legal-page-toolbar>div{text-align:center;min-width:0}
+.legal-page-toolbar span{display:block;color:#C2185B;font-size:9px;font-weight:850;letter-spacing:1.4px}
+.legal-page-toolbar strong{display:block;color:#3A1027;font-family:Manrope,sans-serif;font-size:18px;margin-top:2px}
+.legal-document{background:#fff;border:1px solid #F0DCE5;border-radius:22px;padding:clamp(24px,4vw,54px);box-shadow:0 16px 40px rgba(58,16,39,.06);color:#432536}
+.legal-h2{font-family:Manrope,sans-serif;color:#3A1027;font-size:clamp(23px,2.4vw,34px);line-height:1.2;margin:30px 0 12px;letter-spacing:-.5px}
+.legal-document>.legal-h2:first-child{font-size:clamp(28px,3vw,42px);text-align:center;color:#C2185B;margin-top:0;margin-bottom:12px}
+.legal-h3{font-family:Manrope,sans-serif;color:#5C1637;font-size:20px;line-height:1.3;margin:26px 0 10px}
+.legal-h4{font-family:Manrope,sans-serif;color:#5C1637;font-size:17px;line-height:1.3;margin:22px 0 8px}
+.legal-paragraph{font-size:14px;line-height:1.75;margin:8px 0;color:#513744}
+.legal-list-item{display:grid;grid-template-columns:16px 1fr;gap:8px;font-size:14px;line-height:1.65;margin:5px 0;color:#513744}
+.legal-list-item:before{content:'•';color:#E93E7E;font-weight:900}
+.legal-spacer{height:6px}
+@media(max-width:720px){.legal-page{padding:34px 14px 50px}.legal-page-toolbar{top:78px;grid-template-columns:1fr;gap:8px;text-align:center}.legal-page-toolbar .btn{width:100%}.legal-document{padding:22px 18px}.legal-paragraph,.legal-list-item{font-size:13px}.registration-legal-links{flex-direction:column;gap:6px}}
+
+
+/* V40 — contrôle d'âge obligatoire pour les comptes Demandeur */
+.age-restriction-notice{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:12px 14px;
+  border:1px solid #EDC4D5;
+  border-radius:13px;
+  background:linear-gradient(135deg,#FFF3F8,#FFE8F1);
+  color:#5B1735;
+}
+.age-restriction-notice strong{
+  flex:0 0 auto;
+  padding:5px 8px;
+  border-radius:999px;
+  background:#C2185B;
+  color:#fff;
+  font-size:10px;
+  letter-spacing:.8px;
+}
+.age-restriction-notice span{font-size:12px;line-height:1.45;font-weight:650}
+.registration-modal .field small{display:block;margin-top:5px;color:#7A6270;font-size:10px;line-height:1.4}
+@media(max-width:640px){.age-restriction-notice{align-items:flex-start;flex-direction:column;gap:7px}}

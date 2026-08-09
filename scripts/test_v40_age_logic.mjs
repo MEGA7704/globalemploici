@@ -1,0 +1,16 @@
+import fs from 'node:fs';
+const src=fs.readFileSync(new URL('../src/_worker.js',import.meta.url),'utf8');
+const safe=(src.match(/function safeText\([^\n]+\n/)||[])[0];
+const start=src.indexOf('function candidateAgeFromBirthDate');
+const end=src.indexOf('function validEmail',start);
+if(!safe||start<0||end<0) throw new Error('Age helper functions not found');
+const code=`${safe}\n${src.slice(start,end)}\nreturn {candidateAgeFromBirthDate,candidateIsAdult};`;
+const {candidateAgeFromBirthDate,candidateIsAdult}=new Function(code)();
+const ref=new Date('2026-08-09T20:00:00Z');
+if(!candidateIsAdult('2008-08-09',ref)) throw new Error('18th birthday must be allowed');
+if(candidateIsAdult('2008-08-10',ref)) throw new Error('17-year-old must be refused');
+if(!candidateIsAdult('2000-01-01',ref)) throw new Error('adult candidate must be allowed');
+if(candidateIsAdult('2020-01-01',ref)) throw new Error('minor candidate must be refused');
+if(candidateIsAdult('not-a-date',ref)) throw new Error('invalid birth date must be refused');
+if(candidateAgeFromBirthDate('2008-08-09',ref)!==18) throw new Error('age calculation incorrect');
+console.log('V40_AGE_LOGIC_OK');
