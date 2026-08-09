@@ -583,3 +583,26 @@ body{background:linear-gradient(180deg,#fff 0%,#fffafd 48%,#fff6fa 100%)}
 @media(max-width:1180px){.hero-new{grid-template-columns:minmax(0,1fr) minmax(430px,1fr)}}
 @media(max-width:900px){.hero-new{grid-template-columns:1fr;min-height:0}.hero-visual{min-height:500px}.hero-visual img{min-height:500px}}
 @media(max-width:640px){.hero-content{padding-top:52px;padding-bottom:52px}.hero-visual{min-height:390px}.hero-visual img{min-height:390px}}
+
+
+/* V36 — actions clients, support centralisé et footer MEGA SERVICES */
+.notification-head-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.notification-card{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto;align-items:start;gap:12px}
+.notification-main{min-width:0}
+.notification-delete,.message-delete-client{border:1px solid #F0C5D4;background:#FFF4F7;color:#A91450;border-radius:9px;padding:7px 10px;font-size:11px;font-weight:750;white-space:nowrap}
+.notification-delete:hover,.message-delete-client:hover{background:#FFE7F0}
+.notification-card.read{opacity:.72}
+.notification-card.read .notification-dot{background:#C7B7BF!important}
+.chat-message{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.chat-message>div{min-width:0;flex:1}
+.chat-message.mine .message-delete-client{display:none}
+.support-client-modal>p{margin-top:-4px;margin-bottom:20px}
+.status-cancelled,.application-timeline .cancelled{background:#FFF1E7!important;color:#A14C00!important;border-color:#F3C99E!important}
+.subscription-locked{border:1px solid #E7BFD0;background:#FFF5F9}
+.company-legal-footer{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:7px!important;text-align:center!important;color:#D8E1ED!important;font-size:11px!important;line-height:1.65;max-width:1100px;margin:36px auto 0!important}
+.company-legal-footer strong{color:#fff;font-size:12px}
+.company-legal-footer a{display:inline!important;color:#FFD5E5!important;text-decoration:underline!important;padding:0!important;font-size:inherit!important}
+.site-footer{text-align:center}
+.site-footer .footer-main{text-align:center}
+.site-footer .footer-main a,.site-footer .footer-main button,.site-footer .footer-main p{text-align:center}
+@media(max-width:640px){.notification-head-actions{width:100%;justify-content:stretch}.notification-head-actions .btn{flex:1}.notification-card{grid-template-columns:auto minmax(0,1fr)}.notification-delete{grid-column:2;width:max-content}.chat-message{flex-direction:column}.message-delete-client{align-self:flex-end}.company-legal-footer{font-size:10px}}

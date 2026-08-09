@@ -1,33 +1,23 @@
-# GLOBAL EMPLOI V32
+# GLOBAL EMPLOI V36 — Actions clients & Support
 
-V32 conserve les corrections structurelles V31 et applique la nouvelle présentation de la page d’accueil sans modifier les API ni les liaisons de données.
+V36 est basée sur la branche stable V35/V31 et ajoute les corrections métier demandées sans réintroduire les migrations lourdes dans les menus.
 
-Modifications accueil V32 :
-- boutons « Je cherche un emploi » et « Je recrute » centrés ;
-- 6 recherches populaires ;
-- image `hero-global-emploi-team.png` affichée entièrement sans couper les personnages ;
-- suppression des cartes flottantes ;
-- statistiques sans cadre global + ligne rose ;
-- 3 cartes horizontales Offres / Talents / Recruteurs avec boutons déplacés ;
-- suppression des sections Domaines professionnels, Conseils carrière et À propos ;
-- suppression des liens devenus obsolètes ;
-- responsive desktop, tablette et mobile.
+## Corrections principales
+- bouton **Contacter le support** dans Notifications et Messagerie avec le même popup dédié ;
+- formulaire support retiré de Paramètres ;
+- état **lu/non lu** des notifications persistant dans D1 + lecture individuelle ;
+- suppression des notifications du compte client ;
+- masquage individuel des messages reçus et propositions de recrutement, avec conservation de la copie source pour l’Admin ;
+- cycle candidature **Annuler → Réactiver / Retirer** ;
+- une candidature retirée disparaît des listes Demandeur/Recruteur mais reste dans l’administration avec le statut `withdrawn` ;
+- blocage frontend + backend d’une nouvelle demande d’activation lorsque STANDARD/BUSINESS est encore actif ;
+- **Supprimer définitivement mon compte** envoie désormais une demande officielle au support ; seul le Super Admin conserve l’action de suppression définitive ;
+- footer légal centré pour **MEGA SERVICES SARL U**.
 
-Voir `DEPLOIEMENT_V32.md`.
+## Tests inclus
+- `scripts/test_v36_member_actions.mjs`
+- `scripts/test_v36_frontend.py`
+- tests V31 sans runtime bootstrap ;
+- tests des boutons publics et inscription.
 
-
-## V30 — correction de finalisation de l’inscription
-- Le formulaire se ferme immédiatement après la réponse 201 de `/api/register`.
-- Le chargement post-inscription de `/api/session` ne peut plus maintenir le bouton en rotation.
-- Timeout frontend de 20 s sur les appels API pour éviter tout chargement infini.
-- Les routes register/login/session/logout ne déclenchent plus la reconstruction legacy sur leur chemin critique.
-
-# GLOBAL EMPLOI V27 — Refonte complète de la couche de données
-
-V27 archive automatiquement les anciennes tables en `legacy_v26_*`, recrée un schéma canonique propre, puis importe les anciennes données une seule fois. Le frontend et les routes API gardent leurs noms d'origine. `users.id` est l'unique clé métier. Aucune modification de schéma n'est exécutée pendant les requêtes normales après l'initialisation V27.
-
-Bindings: `JOB_DB` (D1), `JOB_KV` (KV), `ASSETS` fourni par Cloudflare Pages. Secrets Super Admin uniquement dans Cloudflare.
-
-
-## V29 — Correction validation inscription
-Les formulaires Demandeur et Recruteur ont été renforcés avec validation visible, état de chargement, erreurs détaillées et POST natif de secours.
+Voir `DEPLOIEMENT_V36.md`.
