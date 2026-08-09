@@ -1315,13 +1315,8 @@ function scheduleFreePopup(){
 
 const mobileMenuBtn=$('#mobileMenuBtn');
 if(mobileMenuBtn){mobileMenuBtn.onclick=()=>{const nav=$('#publicNav');const open=nav.classList.toggle('open');mobileMenuBtn.setAttribute('aria-expanded',String(open));};$$('#publicNav a').forEach(a=>a.addEventListener('click',()=>{$('#publicNav').classList.remove('open');mobileMenuBtn.setAttribute('aria-expanded','false')}));}
-$$('[data-search]').forEach(b=>b.onclick=()=>{const input=$('#homeSearch');if(input)input.value=b.dataset.search||b.textContent.trim();input?.focus();});
-$('#homeSearchBtn').onclick=()=>{
-  const q=$('#homeSearch')?.value?.trim()||'',city=$('#homeLocation')?.value?.trim()||'';
-  if($('#jobsSearchQ'))$('#jobsSearchQ').value=q;
-  if($('#jobsSearchCity'))$('#jobsSearchCity').value=city;
-  openPublicPage('jobs');
-};
+// V35 : la recherche rapide du Hero a été retirée du design.
+// Les recherches détaillées restent disponibles dans les pages publiques Offres et Profils.
 
 const PUBLIC_HASH_PAGES=new Set(['jobs','candidates','plans']);
 function applyPublicHashRoute(){
