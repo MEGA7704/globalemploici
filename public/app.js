@@ -403,7 +403,7 @@ function buildConnectedTopNav(){
     $('#mobileMenuBtn')?.setAttribute('aria-expanded','false');
   });
 }
-function buildAccountMenu(){const u=state.session?.user;if(!u)return;const role=roleLabel(u.role);$('#accountLabel').textContent='Mon compte';$('#menuAccountEmail').textContent=u.email;$('#menuAccountRole').textContent=role;$('#menuAccountName').textContent=u.email.split('@')[0]||'Mon compte';const nav=$('#accountMenuItems');nav.innerHTML=accountItems(u.role).map(([view,icon,label])=>`<button class="account-menu-link ${state.view===view?'active':''}" type="button" data-account-view="${view}" role="menuitem"><span>${icon}</span><b>${label}</b></button>`).join('');$$('[data-account-view]').forEach(b=>b.onclick=()=>{navigateView(b.dataset.accountView);closeAccountMenu()});loadAccountDisplayName()}
+function buildAccountMenu(){const u=state.session?.user;if(!u)return;const role=roleLabel(u.role);$('#accountLabel').textContent='Mon compte';$('#menuAccountEmail').textContent=u.email;$('#menuAccountRole').textContent=u.member_code?`${role} • ${u.member_code}`:role;$('#menuAccountName').textContent=u.email.split('@')[0]||'Mon compte';const nav=$('#accountMenuItems');nav.innerHTML=accountItems(u.role).map(([view,icon,label])=>`<button class="account-menu-link ${state.view===view?'active':''}" type="button" data-account-view="${view}" role="menuitem"><span>${icon}</span><b>${label}</b></button>`).join('');$$('[data-account-view]').forEach(b=>b.onclick=()=>{navigateView(b.dataset.accountView);closeAccountMenu()});loadAccountDisplayName()}
 async function loadAccountDisplayName(){try{const d=await api('/api/profile'),p=d.profile||{};const full=[p.first_name,p.last_name].filter(Boolean).join(' ').trim();const company=p.company_name||p.commercial_name||'';const label=company||full;if(label){$('#accountLabel').textContent=label.length>20?label.slice(0,20)+'…':label;$('#menuAccountName').textContent=label}}catch{}}
 function syncViewNavigation(view){
   $$('[data-account-view]').forEach(x=>x.classList.toggle('active',x.dataset.accountView===view));
@@ -553,7 +553,7 @@ async function renderDashboard(){
       <section class="role-dashboard recruiter-command-center">
         <div class="dashboard-welcome">
           <div><span class="section-kicker">ESPACE RECRUTEUR</span><h2>Centre de recrutement</h2><p>Suivez vos offres, candidatures, recherches de talents et communications depuis un tableau de bord unique.</p></div>
-          <div class="dashboard-plan"><small>ABONNEMENT</small><strong>${esc((s?.plan||'—').toUpperCase())}</strong><span>${paid?'Actif':'Accès limité / publications masquées'} • ${expiry}</span></div>
+          <div class="dashboard-plan"><small>ABONNEMENT</small><strong>${esc((s?.plan||'—').toUpperCase())}</strong><span>${paid?'Actif':'Accès limité / actions verrouillées'} • ${expiry}</span></div>
         </div>
         <div class="recruiter-status-strip">
           <span class="status-badge ${c.verification_status==='verified'?'active':''}">${c.verification_status==='verified'?'Entreprise vérifiée ✓':c.verification_status==='pending'?'Vérification en cours':'Compte non vérifié'}</span>
@@ -611,6 +611,7 @@ async function renderProfile(){const d=await api('/api/profile'),p=d.profile||{}
   const status=comp.verification_status||p.verification_status||'unverified';
   const statusLabel=status==='verified'?'Entreprise vérifiée ✓':status==='pending'?'Vérification en cours':'Compte non vérifié';
   $('#viewContent').innerHTML=`
+  <div class="member-code-badge">🆔 ${esc(state.session?.user?.member_code||'')}</div>
   <div class="verification-card ${status}">
     <div><span class="section-kicker">VÉRIFICATION DU COMPTE</span><h3>${statusLabel}</h3>
     <p>${status==='verified'?'Votre entreprise bénéficie du badge GLOBAL EMPLOI vérifié.':status==='pending'?'Votre dossier est en cours d’examen par GLOBAL EMPLOI.':'Complétez votre entreprise et ajoutez un document officiel pour demander la vérification.'}</p></div>
@@ -701,7 +702,7 @@ async function previewMyCandidateProfile(){
     modal(`<div class="detail-popup candidate-preview">
       <div class="candidate-detail-head">${c.photo?`<img src="${esc(c.photo)}" alt="">`:`<div class="candidate-photo large"><span>${esc(((c.first_name||'P')[0]||'P')+((c.last_name||'')[0]||''))}</span></div>`}
       <div><span class="pill">${paid?'VISIBLE AUX RECRUTEURS':'MASQUÉ EN FREE'}</span><h2>${esc(`${c.first_name||''} ${c.last_name||''}`.trim()||'Mon profil')}</h2><p><b>${esc(c.professional_title||c.profession||'Profil professionnel')}</b></p><p class="muted">⌖ ${esc(c.city||'—')}, ${esc(c.country||'')}</p></div></div>
-      ${!paid?'<div class="free-dashboard-notice"><b>Aperçu uniquement :</b> votre profil reste masqué aux recruteurs tant que STANDARD ou BUSINESS n’est pas actif.</div>':''}
+      ${!paid?'<div class="free-dashboard-notice"><b>Compte FREE :</b> votre profil reste visible publiquement, mais les actions professionnelles avancées nécessitent STANDARD ou BUSINESS.</div>':''}
       <div class="detail-grid"><div><small>Domaine</small><strong>${esc(c.activity_domain||'—')}</strong></div><div><small>Expérience</small><strong>${esc(c.experience_level||c.experience_years||'—')}</strong></div><div><small>Disponibilité</small><strong>${esc(c.availability||'—')}</strong></div><div><small>Poste recherché</small><strong>${esc(c.target_position||'—')}</strong></div><div><small>Contrats</small><strong>${esc(c.desired_contracts||'—')}</strong></div><div><small>Mobilité</small><strong>${esc(c.mobility||'—')}</strong></div></div>
       <div class="detail-section"><h3>Présentation</h3><p>${esc(c.description||'Aucune présentation renseignée.')}</p></div>
       <div class="detail-section"><h3>Compétences</h3><p>${esc(c.skills||c.other_skills||'—')}</p></div>
@@ -746,7 +747,7 @@ async function renderJobs(){
   if(role==='candidate'){
     const paid=hasActivePaidPlan();
     $('#viewContent').innerHTML=`
-      <div class="module-hero"><div><span class="section-kicker">OFFRES D’EMPLOI</span><h2>Trouvez votre prochaine opportunité</h2><p>Les offres affichées proviennent uniquement de recruteurs STANDARD ou BUSINESS actifs.</p></div>${!paid?'<button class="btn primary candidate-subscription-shortcut">Activer pour postuler</button>':''}</div>
+      <div class="module-hero"><div><span class="section-kicker">OFFRES D’EMPLOI</span><h2>Trouvez votre prochaine opportunité</h2><p>Consultez toutes les offres publiées. En FREE, le bouton « Je postule » vous redirige vers l’abonnement.</p></div>${!paid?'<button class="btn primary candidate-subscription-shortcut">Activer pour postuler</button>':''}</div>
       ${!paid?'<div class="free-dashboard-notice"><b>Vous êtes en FREE :</b> la consultation est libre. En cliquant sur « Je postule », vous serez dirigé vers la page Abonnement.</div>':''}
       <div class="market-search candidate-job-search">
         <div class="field"><label>Poste / métier</label><input id="candidateJobQ" placeholder="Comptable, Chauffeur, Maçon…"></div>
@@ -784,8 +785,8 @@ async function renderJobs(){
   if(role==='super_admin'){navigateView('jobsadmin');return;}
   const paid=hasActivePaidPlan();
   $('#viewContent').innerHTML=`
-    <div class="module-hero"><div><span class="section-kicker">PUBLICATION</span><h2>Créer une offre professionnelle</h2><p>Préparez votre recrutement avec toutes les informations utiles aux candidats.</p></div><span class="status-badge ${paid?'active':'hidden-status'}">${paid?'Publication visible si publiée':'FREE : publication masquée'}</span></div>
-    ${!paid?'<div class="visibility-notice"><b>Compte FREE :</b> vous pouvez préparer vos offres et les enregistrer, mais elles restent masquées jusqu’à l’activation STANDARD ou BUSINESS.</div>':''}
+    <div class="module-hero"><div><span class="section-kicker">PUBLICATION</span><h2>Créer une offre professionnelle</h2><p>Préparez votre recrutement avec toutes les informations utiles aux candidats.</p></div><span class="status-badge ${paid?'active':'hidden-status'}">${paid?'Publication active':'FREE : 1 publication maximum'}</span></div>
+    ${!paid?'<div class="visibility-notice"><b>Compte FREE :</b> votre offre reste visible publiquement, mais votre compte est limité à 1 seule publication. Le bouton « Je recrute » reste soumis à STANDARD ou BUSINESS.</div>':''}
     <div class="panel professional-form-panel">
       <form id="jobForm" class="form-grid recruiter-job-form">
         <div class="field"><label>Intitulé du poste *</label><input name="title" required></div>
@@ -822,7 +823,7 @@ async function renderJobs(){
     const data=collect();
     try{
       await api('/api/jobs',{method:'POST',body:JSON.stringify(data)});
-      toast(data.status==='draft'?'Brouillon enregistré.':paid?'Offre publiée.':'Offre enregistrée mais masquée en FREE.');
+      toast(data.status==='draft'?'Brouillon enregistré.':paid?'Offre publiée.':'Offre publiée. Compte FREE : 1 publication maximum autorisée.');
       setTimeout(()=>navigateView('myjobs'),350);
     }catch(err){toast(err.message)}
   };
@@ -835,24 +836,26 @@ async function renderMyJobs(){
   const d=await api('/api/recruiter/jobs'),paid=hasActivePaidPlan();
   $('#viewContent').innerHTML=`
     <div class="module-hero"><div><span class="section-kicker">MES PUBLICATIONS</span><h2>Gestion des offres</h2><p>Modifiez, dupliquez, publiez, masquez ou clôturez vos offres et suivez leur performance.</p></div><button class="btn primary" id="newJobFromMine">＋ Nouvelle offre</button></div>
-    ${!paid?'<div class="visibility-notice"><b>Visibilité suspendue :</b> vos offres sont conservées, mais aucune n’est publique tant que votre abonnement payant n’est pas actif.</div>':''}
-    <div class="admin-tabs recruiter-job-tabs"><button class="job-tab active" data-status="">Toutes</button><button class="job-tab" data-status="published">Publiées</button><button class="job-tab" data-status="draft">Brouillons</button><button class="job-tab" data-status="suspended">Masquées</button><button class="job-tab" data-status="closed">Clôturées</button></div>
+    ${!paid?'<div class="visibility-notice"><b>Compte FREE :</b> vos publications restent visibles, mais vous êtes limité à 1 seule offre active. Les actions professionnelles avancées nécessitent STANDARD ou BUSINESS.</div>':''}
+    <div class="admin-tabs recruiter-job-tabs"><button class="job-tab active" data-status="">Toutes</button><button class="job-tab" data-status="published">Publiées</button><button class="job-tab" data-status="draft">Brouillons</button><button class="job-tab" data-status="expired">Expirées</button><button class="job-tab" data-status="suspended">Masquées</button><button class="job-tab" data-status="closed">Clôturées</button></div>
     <div id="recruiterJobsList"></div>`;
   const draw=status=>{
     const rows=d.jobs.filter(j=>!status||j.status===status);
     $('#recruiterJobsList').innerHTML=`<div class="professional-list">${rows.map(j=>`<article class="manage-card recruiter-job-card">
-      <div class="manage-main"><div class="card-topline"><span class="pill status-${esc(j.status)}">${esc(j.status||'draft')}</span><span class="visibility-label ${j.public_visible?'visible':'hidden-vis'}">${j.public_visible?'Visible publiquement':'Masquée'}</span></div><h3>${esc(j.title)}</h3><p><b>${esc(j.location||'Lieu non précisé')}</b> • ${esc(j.employment_type||'')} • ${new Date(j.created_at).toLocaleDateString('fr-FR')}</p><div class="job-performance"><span>◌ ${formatCount(j.view_count||0)} vue(s)</span><span>✓ ${formatCount(j.application_count||0)} candidature(s)</span></div></div>
+      <div class="manage-main"><div class="card-topline"><span class="pill status-${esc(j.status)}">${esc(j.status||'draft')}</span><span class="visibility-label ${j.status==='expired'?'expired-vis':(j.public_visible?'visible':'hidden-vis')}">${j.status==='expired'?'Expirée automatiquement':(j.public_visible?'Visible publiquement':'Masquée')}</span></div><h3>${esc(j.title)}</h3><p><b>${esc(j.location||'Lieu non précisé')}</b> • ${esc(j.employment_type||'')} • ${new Date(j.created_at).toLocaleDateString('fr-FR')}</p><div class="job-performance"><span>◌ ${formatCount(j.view_count||0)} vue(s)</span><span>✓ ${formatCount(j.application_count||0)} candidature(s)</span></div><div class="job-expiry-note">⏱️ Expiration : ${j.closes_at?formatDateFR(j.closes_at):'Non définie'}</div></div>
       <div class="manage-actions">
         <button class="btn outline-blue recruiter-job-view" data-id="${j.id}">Voir</button>
         <button class="btn ghost recruiter-job-edit" data-id="${j.id}">Modifier</button>
         <button class="btn ghost recruiter-job-duplicate" data-id="${j.id}">Dupliquer</button>
-        <select class="job-status" data-id="${j.id}"><option value="published" ${j.status==='published'?'selected':''}>Publier</option><option value="draft" ${j.status==='draft'?'selected':''}>Brouillon</option><option value="suspended" ${j.status==='suspended'?'selected':''}>Masquer</option><option value="closed" ${j.status==='closed'?'selected':''}>Clôturer</option></select>
+        ${j.status==='expired'?`<button class="btn renew-job-btn recruiter-job-renew" data-id="${j.id}">Renouveler</button>`:''}
+        <select class="job-status" data-id="${j.id}"><option value="published" ${j.status==='published'?'selected':''}>Publier</option><option value="draft" ${j.status==='draft'?'selected':''}>Brouillon</option><option value="expired" ${j.status==='expired'?'selected':''}>Expirée</option><option value="suspended" ${j.status==='suspended'?'selected':''}>Masquer</option><option value="closed" ${j.status==='closed'?'selected':''}>Clôturer</option></select>
         <button class="btn danger delete-job" data-id="${j.id}">Supprimer</button>
       </div>
     </article>`).join('')||'<div class="panel empty-state">Aucune offre dans cette catégorie.</div>'}</div>`;
     $$('.recruiter-job-view').forEach(b=>b.onclick=()=>recruiterJobDetail(Number(b.dataset.id)));
     $$('.recruiter-job-edit').forEach(b=>b.onclick=()=>editRecruiterJob(Number(b.dataset.id)));
     $$('.recruiter-job-duplicate').forEach(b=>b.onclick=async()=>{try{await api(`/api/recruiter/jobs/${b.dataset.id}/duplicate`,{method:'POST'});toast('Offre dupliquée en brouillon.');renderMyJobs()}catch(err){toast(err.message)}});
+    $$('.recruiter-job-renew').forEach(b=>b.onclick=async()=>{try{await api(`/api/recruiter/jobs/${b.dataset.id}/renew`,{method:'POST'});toast('Offre renouvelée pour une nouvelle durée.');renderMyJobs()}catch(err){toast(err.message)}});
     $$('.job-status').forEach(s=>s.onchange=async()=>{try{await api(`/api/recruiter/jobs/${s.dataset.id}/status`,{method:'POST',body:JSON.stringify({status:s.value})});toast('Statut mis à jour.');renderMyJobs()}catch(err){toast(err.message)}});
     $$('.delete-job').forEach(b=>b.onclick=async()=>{if(!confirm('Supprimer définitivement cette offre et les candidatures associées ?'))return;try{await api(`/api/recruiter/jobs/${b.dataset.id}`,{method:'DELETE'});toast('Offre supprimée.');renderMyJobs()}catch(err){toast(err.message)}});
   };
@@ -1074,7 +1077,7 @@ function renderSubscription(){
   $('#viewContent').innerHTML=`
     <div class="module-hero"><div><span class="section-kicker">ABONNEMENT</span><h2>Choisissez votre niveau d’accès</h2><p>Votre formule détermine la visibilité de vos publications et l’accès aux actions de recrutement.</p></div><div class="dashboard-plan light-plan"><small>FORMULE ACTUELLE</small><strong>${current}</strong><span>${active?'Active':'Expirée'} ${s?.expires_at?'• '+new Date(s.expires_at).toLocaleDateString('fr-FR'):''}</span></div></div>
     <div class="plans professional-plans">
-      <div class="plan"><h3>FREE</h3><div class="price">0 F</div><p>Consultation permanente</p><ul><li>✓ Consultation des contenus</li><li>✓ Préparation du profil/publications</li><li>✕ ${state.session.user.role==='candidate'?'Je postule':'Je recrute'}</li><li>✕ ${state.session.user.role==='candidate'?'Profil visible aux recruteurs':'Offres visibles au public'}</li></ul><small class="free-warning">Le compte FREE reste accessible pour consulter la plateforme. STANDARD ou BUSINESS est requis pour les actions professionnelles et la visibilité publique.</small></div>
+      <div class="plan"><h3>FREE</h3><div class="price">0 F</div><p>Consultation permanente</p><ul><li>✓ Consultation des contenus</li><li>✓ Publication visible (1 maximum)</li><li>✕ ${state.session.user.role==='candidate'?'Je postule':'Je recrute'}</li><li>✕ Actions professionnelles avancées</li></ul><small class="free-warning">Le compte FREE reste accessible pour consulter la plateforme. STANDARD ou BUSINESS est requis pour les actions professionnelles.</small></div>
       <div class="plan featured"><h3>STANDARD</h3><div class="price">1 000 F</div><p>30 jours</p><ul><li>✓ Publications visibles</li><li>✓ Je postule / Je recrute</li><li>✓ Messagerie et suivi</li></ul>${paidActive?'<span class="status-badge active">Abonnement payant déjà actif</span>':'<a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=1000" target="_blank" rel="noopener">Payer 1 000 F avec Wave</a>'}</div>
       <div class="plan"><h3>BUSINESS</h3><div class="price">10 000 F</div><p>365 jours</p><ul><li>✓ Accès complet</li><li>✓ Visibilité longue durée</li><li>✓ Toutes les fonctions professionnelles</li></ul>${paidActive?'<span class="status-badge active">Abonnement payant déjà actif</span>':'<a class="btn primary" href="https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=10000" target="_blank" rel="noopener">Payer 10 000 F avec Wave</a>'}</div>
     </div>
@@ -1196,7 +1199,7 @@ async function renderAdminMembers(){
   $('#viewContent').innerHTML=`
     <div class="module-hero"><div><span class="section-kicker">GESTION CENTRALE</span><h2>Membres inscrits</h2><p>Consultez tous les comptes, leurs statuts et leurs abonnements. Les comptes FREE restent accessibles pour la consultation.</p></div><div class="report-actions"><div class="dashboard-plan light-plan"><small>TOTAL GÉRÉ</small><strong>${formatCount(d.users.filter(x=>x.role!=='super_admin').length)}</strong><span>membres inscrits</span></div><button id="refreshAdminMembers" class="btn outline-blue">Actualiser</button></div></div>
     <div class="market-search admin-filter">
-      <div class="field"><label>Recherche</label><input id="adminMemberSearch" placeholder="E-mail, téléphone, rôle…"></div>
+      <div class="field"><label>Recherche</label><input id="adminMemberSearch" placeholder="E-mail, téléphone, rôle, numéro membre…"></div>
       <div class="field"><label>Rôle</label><select id="adminMemberRole"><option value="">Tous</option><option value="candidate">Demandeurs</option><option value="recruiter">Recruteurs</option></select></div>
       <div class="field"><label>Statut</label><select id="adminMemberStatus"><option value="">Tous</option><option value="active">Actifs</option><option value="suspended">Suspendus</option><option value="disabled">Désactivés</option></select></div>
       <button id="adminMemberFilterBtn" class="btn primary">Filtrer</button>
@@ -1204,8 +1207,8 @@ async function renderAdminMembers(){
     <div id="adminMembersTable"></div>`;
   const draw=()=>{
     const q=$('#adminMemberSearch').value.toLowerCase().trim(),role=$('#adminMemberRole').value,status=$('#adminMemberStatus').value;
-    const rows=d.users.filter(x=>x.role!=='super_admin'&&(!role||x.role===role)&&(!status||x.status===status)&&(!q||`${x.email} ${x.phone||''} ${x.role}`.toLowerCase().includes(q)));
-    $('#adminMembersTable').innerHTML=`<div class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Membre</th><th>Rôle</th><th>Statut</th><th>Formule</th><th>Expiration</th><th>Actions</th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.email)}</b><br><small>${esc(x.phone||'')}</small></td><td>${x.role==='candidate'?'Demandeur':'Recruteur'}</td><td><span class="pill">${esc(x.status)}</span></td><td>${esc((x.plan||'—').toUpperCase())}</td><td>${x.plan==='free'?'Sans expiration':x.expires_at?new Date(x.expires_at).toLocaleDateString('fr-FR'):'—'}</td><td><div class="admin-row-actions"><button class="btn outline-blue admin-member-detail" data-id="${x.id}">Voir</button><select class="admin-user-status" data-id="${x.id}"><option value="active" ${x.status==='active'?'selected':''}>Actif</option><option value="suspended" ${x.status==='suspended'?'selected':''}>Suspendu</option><option value="disabled" ${x.status==='disabled'?'selected':''}>Désactivé</option></select><button class="btn danger admin-delete-user" data-id="${x.id}" data-email="${esc(x.email)}">Supprimer</button></div></td></tr>`).join('')||'<tr><td colspan="6">Aucun résultat.</td></tr>'}</tbody></table></div></div>`;
+    const rows=d.users.filter(x=>x.role!=='super_admin'&&(!role||x.role===role)&&(!status||x.status===status)&&(!q||`${x.email} ${x.phone||''} ${x.role} ${x.member_code||''}`.toLowerCase().includes(q)));
+    $('#adminMembersTable').innerHTML=`<div class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Membre</th><th>Rôle</th><th>Statut</th><th>Formule</th><th>Expiration</th><th>Actions</th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.email)}</b><br><small>${esc(x.phone||'')}</small><br><small>${esc(x.member_code||'')}</small></td><td>${x.role==='candidate'?'Demandeur':'Recruteur'}</td><td><span class="pill">${esc(x.status)}</span></td><td>${esc((x.plan||'—').toUpperCase())}</td><td>${x.plan==='free'?'Sans expiration':x.expires_at?new Date(x.expires_at).toLocaleDateString('fr-FR'):'—'}</td><td><div class="admin-row-actions"><button class="btn outline-blue admin-member-detail" data-id="${x.id}">Voir</button><select class="admin-user-status" data-id="${x.id}"><option value="active" ${x.status==='active'?'selected':''}>Actif</option><option value="suspended" ${x.status==='suspended'?'selected':''}>Suspendu</option><option value="disabled" ${x.status==='disabled'?'selected':''}>Désactivé</option></select><button class="btn danger admin-delete-user" data-id="${x.id}" data-email="${esc(x.email)}">Supprimer</button></div></td></tr>`).join('')||'<tr><td colspan="6">Aucun résultat.</td></tr>'}</tbody></table></div></div>`;
     $$('.admin-user-status').forEach(s=>s.onchange=async()=>{try{await api(`/api/admin/users/${s.dataset.id}/status`,{method:'POST',body:JSON.stringify({status:s.value})});toast('Statut du membre mis à jour.')}catch(err){toast(err.message)}});
     $$('.admin-delete-user').forEach(b=>b.onclick=()=>adminDeleteUser(b.dataset.id,b.dataset.email));
     $$('.admin-member-detail').forEach(b=>b.onclick=()=>adminMemberDetail(Number(b.dataset.id)));
@@ -1216,7 +1219,7 @@ async function adminMemberDetail(id){
   try{
     const d=await api(`/api/admin/users/${id}/detail`),u=d.user;
     const display=u.role==='candidate'?`${u.c_first_name||''} ${u.c_last_name||''}`.trim():(u.company_name||`${u.r_first_name||''} ${u.r_last_name||''}`.trim());
-    modal(`<div class="admin-member-modal"><span class="section-kicker">${u.role==='candidate'?'DEMANDEUR':'RECRUTEUR'}</span><h2>${esc(display||u.email)}</h2><p class="muted">${esc(u.email)} • ${esc(u.phone||'')}</p>
+    modal(`<div class="admin-member-modal"><span class="section-kicker">${u.role==='candidate'?'DEMANDEUR':'RECRUTEUR'}</span><h2>${esc(display||u.email)}</h2><p class="muted">${esc(u.email)} • ${esc(u.phone||'')} • ${esc(u.member_code||'')}</p>
       <div class="detail-grid"><div><small>Statut</small><strong>${esc(u.status)}</strong></div><div><small>Formule</small><strong>${esc((u.plan||'—').toUpperCase())}</strong></div><div><small>Expiration</small><strong>${u.expires_at?new Date(u.expires_at).toLocaleDateString('fr-FR'):'—'}</strong></div><div><small>Inscription</small><strong>${new Date(u.created_at).toLocaleDateString('fr-FR')}</strong></div><div><small>Dernière connexion</small><strong>${u.last_login_at?new Date(u.last_login_at).toLocaleString('fr-FR'):'—'}</strong></div><div><small>Publications</small><strong>${formatCount(d.publications.jobs||0)} offre(s) • ${formatCount(d.publications.applications||0)} candidature(s)</strong></div></div>
       <div class="admin-member-tools">
         <div class="tool-card"><h3>Changer / prolonger l’abonnement</h3><div class="form-grid"><div class="field"><label>Formule</label><select id="adminMemberPlan"><option value="free">FREE</option><option value="standard">STANDARD</option><option value="business">BUSINESS</option></select></div><div class="field"><label>Durée (jours)</label><input id="adminMemberDays" type="number" min="1" max="730" value="30"></div></div><button id="adminMemberSubscriptionSave" class="btn primary">Appliquer</button></div>
@@ -1492,6 +1495,10 @@ function hasActivePaidPlan(){
   const s=state.session?.subscription;
   return !!(s && s.effective_status==='active' && (s.plan==='standard'||s.plan==='business') && (!s.expires_at || new Date(s.expires_at).getTime()>Date.now()));
 }
+function shouldRevealMemberMedia(){return !!state.session}
+function initialsFromParts(...parts){const joined=parts.filter(Boolean).join(' ').trim();const words=joined.split(/\s+/).filter(Boolean);const letters=words.slice(0,2).map(w=>(w[0]||'').toUpperCase()).join('');return letters||'GE'}
+function publicMediaMarkup({url,name,cls='company-logo',avatar='GE'}={}){return `<div class="${cls}">${shouldRevealMemberMedia()&&url?`<img src="${esc(url)}" alt="${esc(name||'')}">`:`<span>${esc(avatar)}</span>`}</div>`}
+function publicAvatarHint(){return !shouldRevealMemberMedia()?'<span class="avatar-hidden-note">👤 Visiteur : avatar affiché</span>':''}
 function formatDateFR(v){if(!v)return '—';try{return new Date(v).toLocaleDateString('fr-FR')}catch{return String(v)}}
 function publicActionForJob(jobId){
   const role=roleNow();
@@ -1526,11 +1533,18 @@ async function loadPublicJobs(page=1){
     $('#publicJobsCount').textContent=`${formatCount(pg.total)} offre${pg.total>1?'s':''} disponible${pg.total>1?'s':''} • Page ${pg.page}/${pg.pages}`;
     grid.innerHTML=d.jobs.length?d.jobs.map(j=>`
       <article class="offer-card job-market-card clickable-card" data-job="${j.id}" tabindex="0">
-        <div class="offer-top"><div class="company-logo">${j.logo?`<img src="${esc(j.logo)}" alt="">`:esc((j.company_name||'GE').slice(0,2).toUpperCase())}</div><span class="offer-badge new">${esc((j.plan||'standard').toUpperCase())}</span></div>
-        <h3>${esc(j.title)}</h3><p class="company">${esc(j.company_name||'Recruteur GLOBAL EMPLOI')}</p>
+        <div class="offer-top">${publicMediaMarkup({url:j.logo,name:j.company_name,cls:'company-logo',avatar:initialsFromParts(j.company_name||'GLOBAL EMPLOI')})}<span class="offer-badge new">${esc((j.plan||'free').toUpperCase())}</span></div>
+        <div class="offer-body">
+          <div class="offer-copy">
+            <h3>${esc(j.title)}</h3><p class="company">${esc(j.company_name||'Recruteur GLOBAL EMPLOI')}</p>
+            <div class="offer-accent"></div>
+          </div>
+          <div class="offer-identity">${publicMediaMarkup({url:j.logo,name:j.company_name,cls:'company-logo',avatar:initialsFromParts(j.company_name||'GLOBAL EMPLOI')})}</div>
+        </div>
         <div class="offer-meta"><span>⌖ ${esc(j.location||'Lieu non précisé')}</span><span>▣ ${esc(j.employment_type||'Type non précisé')}</span></div>
-        <p class="card-summary">${esc((j.description||'').slice(0,160))}${(j.description||'').length>160?'…':''}</p>
-        <div class="offer-footer"><small>Publié le ${formatDateFR(j.created_at)}</small><span>${esc(j.category||j.profession||'')}</span></div>
+        <div class="offer-focus"><span class="offer-focus-icon">☾</span><div><strong>${esc((j.category||j.profession||'Offre professionnelle').toUpperCase())}</strong><div class="job-plan-note">${esc((j.description||'').slice(0,115))}${(j.description||'').length>115?'…':''}</div></div></div>
+        <div class="offer-footer"><small>🗓️ Publié le ${formatDateFR(j.created_at)}</small><span>💼 ${esc(j.category||j.profession||'Offre')}</span></div>
+        ${publicAvatarHint()}
         <div class="card-actions"><button class="btn outline-blue public-job-detail" data-job="${j.id}">Voir l’offre</button>${publicActionForJob(j.id)}</div>
       </article>`).join(''):'<div class="panel empty-state">Aucune offre disponible ne correspond à votre recherche.</div>';
     renderDirectoryPagination('#publicJobsPagination',pg,p=>loadPublicJobs(p));
@@ -1592,12 +1606,13 @@ async function loadPublicCandidates(page=1){
     $('#publicCandidatesCount').textContent=`${formatCount(pg.total)} talent${pg.total>1?'s':''} disponible${pg.total>1?'s':''} • Page ${pg.page}/${pg.pages}`;
     grid.innerHTML=d.candidates.length?d.candidates.map(c=>`
       <article class="candidate-market-card clickable-card" data-candidate="${c.id}" tabindex="0">
-        <div class="candidate-photo">${c.photo?`<img src="${esc(c.photo)}" alt="">`:`<span>${esc(((c.first_name||'P')[0]||'P')+((c.last_name||'')[0]||''))}</span>`}</div>
-        <div class="candidate-body"><span class="pill">${esc((c.plan||'standard').toUpperCase())}</span>
+        ${publicMediaMarkup({url:c.photo,name:`${c.first_name||''} ${c.last_name||''}`.trim(),cls:'candidate-photo',avatar:initialsFromParts(c.first_name||'P',c.last_name||'')})}
+        <div class="candidate-body"><div class="card-topline"><span class="pill">${esc((c.plan||'free').toUpperCase())}</span></div>
           <h3>${esc(`${c.first_name||''} ${c.last_name||''}`.trim()||'Professionnel')}</h3>
           <strong>${esc(c.professional_title||c.profession||'Profil professionnel')}</strong>
           <p>⌖ ${esc(c.city||c.country||'Localisation non précisée')}</p>
           <p class="card-summary">${esc((c.skills||c.specialty||'').slice(0,140))}</p>
+          ${publicAvatarHint()}
         </div>
         <div class="candidate-card-footer"><button class="btn outline-blue public-candidate-detail" data-candidate="${c.id}">Voir le profil</button>${publicActionForCandidate(c.id)}</div>
       </article>`).join(''):'<div class="panel empty-state">Aucun talent disponible ne correspond à votre recherche.</div>';
@@ -1628,8 +1643,8 @@ async function openCandidateDetail(id){
   try{
     const d=await api(`/api/candidates/${id}`),c=d.candidate;
     modal(`<div class="detail-popup">
-      <div class="candidate-detail-head">${c.photo?`<img src="${esc(c.photo)}" alt="">`:`<div class="candidate-photo large"><span>${esc(((c.first_name||'P')[0]||'P')+((c.last_name||'')[0]||''))}</span></div>`}
-        <div><h2>${esc(`${c.first_name||''} ${c.last_name||''}`.trim()||'Professionnel')}</h2><p><b>${esc(c.professional_title||c.profession||'Profil professionnel')}</b></p><p class="muted">⌖ ${esc(c.city||'—')}, ${esc(c.country||'')}</p></div></div>
+      <div class="candidate-detail-head">${publicMediaMarkup({url:c.photo,name:`${c.first_name||''} ${c.last_name||''}`.trim(),cls:'candidate-photo large',avatar:initialsFromParts(c.first_name||'P',c.last_name||'')})}
+        <div><h2>${esc(`${c.first_name||''} ${c.last_name||''}`.trim()||'Professionnel')}</h2><p><b>${esc(c.professional_title||c.profession||'Profil professionnel')}</b></p><p class="muted">⌖ ${esc(c.city||'—')}, ${esc(c.country||'')}</p>${publicAvatarHint()}</div></div>
       <div class="detail-grid">
         <div><small>Domaine</small><strong>${esc(c.activity_domain||'—')}</strong></div>
         <div><small>Expérience</small><strong>${esc(c.experience_level||c.experience_years||'—')}</strong></div>
